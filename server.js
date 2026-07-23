@@ -34,10 +34,10 @@ const orchestra = {
   bpm: 120,
   key: 'C',
   scale: 'minor',
-  mode: 'ambient',      // ambient | beat | chaos — визуальный/сценический режим (существовал раньше)
-  playMode: 'synth',    // synth | remix — инструменты vs пульт эффектов
-  totalPlayers: 0,      // счётчик для назначения ролей — только растёт
-  instruments: {}       // socket.id -> { role, playMode, joinIndex, note, velocity, value, lastUpdate }
+  mode: 'ambient',
+  playMode: 'synth',
+  totalPlayers: 0,
+  instruments: {}
 };
 
 const SYNTH_ROLES = ['bass', 'pad', 'lead', 'arp', 'fx'];
@@ -47,11 +47,10 @@ function rolesForPlayMode(playMode) {
   return playMode === 'remix' ? REMIX_ROLES : SYNTH_ROLES;
 }
 
-// Сокеты, зарегистрированные как хост (conductor.html) — им ретранслируем effect-change
 const conductorSocketIds = new Set();
 
 // ───────────────────────────────────────────────
-// Гаммы (для playMode = synth), как раньше
+// Гаммы (для playMode = synth)
 // ───────────────────────────────────────────────
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const KEY_SEMITONE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -92,9 +91,6 @@ function getCurrentScale() {
   return scales[`${orchestra.key}:${orchestra.scale}`] || FALLBACK_SCALE;
 }
 
-// ───────────────────────────────────────────────
-// Сериализация instruments для клиентов
-// ───────────────────────────────────────────────
 function serializeInstruments(includeLastUpdate) {
   const result = {};
   for (const id of Object.keys(orchestra.instruments)) {
@@ -124,10 +120,6 @@ function currentSettingsPayload() {
   };
 }
 
-/**
- * Переназначает роли ВСЕМ подключённым игрокам под текущий orchestra.playMode
- * и рассылает каждому персональный 'init'. Вызывается при смене playMode.
- */
 function reassignAllRoles() {
   const roles = rolesForPlayMode(orchestra.playMode);
 
@@ -155,7 +147,6 @@ function reassignAllRoles() {
 io.on('connection', (socket) => {
   console.log(`[socket] ${socket.id} подключился, ждём 'register'`);
 
-  // ── register: клиент сообщает свой тип ──────────
   socket.on('register', ({ type }) => {
     socket.clientType = type;
 
@@ -187,9 +178,6 @@ io.on('connection', (socket) => {
     broadcastPlayerCount();
   });
 
-  // ── motion: используется ТОЛЬКО в playMode = synth. ──
-  // В remix-режиме player.html сам считает значение эффекта и шлёт effect-change,
-  // без обращения к серверу за маппингом — см. player.html.
   socket.on('motion', ({ gamma, beta }) => {
     if (typeof gamma !== 'number' || typeof beta !== 'number') return;
 
@@ -208,8 +196,6 @@ io.on('connection', (socket) => {
     socket.emit('sound-update', { note, velocity });
   });
 
-  // ── effect-change: используется ТОЛЬКО в playMode = remix ──
-  // Ретранслируется на всех зарегистрированных хостов (conductor.html)
   socket.on('effect-change', ({ role, value }) => {
     const instrument = orchestra.instruments[socket.id];
     if (!instrument || instrument.playMode !== 'remix') return;
@@ -226,7 +212,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ── conductor-command: bpm/key/scale/mode/playMode ──
   socket.on('conductor-command', ({ bpm, key, scale, mode, playMode }) => {
     if (typeof bpm === 'number') {
       orchestra.bpm = Math.max(40, Math.min(200, bpm));
@@ -244,42 +229,44 @@ io.on('connection', (socket) => {
     const playModeChanged = playMode && ['synth', 'remix'].includes(playMode) && playMode !== orchestra.playMode;
     if (playModeChanged) {
       orchestra.playMode = playMode;
-      reassignAllRoles(); // рассылает персональные 'init' всем игрокам
+      reassignAllRoles();
       console.log(`[conductor-command] playMode → ${playMode}, роли переназначены`);
     }
 
     io.emit('orchestra-settings', currentSettingsPayload());
 
     if (playModeChanged) {
-      broadcastPlayerCount(); // instruments поменялись (role/value/note сброшены)
+      broadcastPlayerCount();
     }
   });
 
-  // ── spectrum-data: хост шлёт FFT-бины для визуализации в remix-режиме ──
   socket.on('spectrum-data', (data) => {
     if (socket.clientType !== 'conductor') return;
     io.emit('spectrum-data', data);
   });
 
-  // ── load-preloaded-track: хост просит поднять трек из public/tracks/ ──
-  // Файл уже лежит на диске (загруженный через /upload-track, либо предзагруженный
-  // вручную) — просто отдаём его URL, ничего не читаем в память целиком.
   socket.on('load-preloaded-track', ({ filename }) => {
-    if (socket.clientType !== 'conductor') return;
+    console.log(`[load-preloaded-track] запрошен файл: "${filename}"`);
 
-    const safeName = path.basename(String(filename || '')); // защита от path traversal
+    if (socket.clientType !== 'conductor') {
+      console.warn(`[load-preloaded-track] отклонено: сокет ${socket.id} не зарегистрирован как conductor (clientType: ${socket.clientType})`);
+      return;
+    }
+
+    const safeName = path.basename(String(filename || ''));
     const filePath = path.join(TRACKS_DIR, safeName);
 
     fs.access(filePath, fs.constants.R_OK, (err) => {
       if (err) {
-        socket.emit('track-load-error', { message: `Не удалось загрузить трек: ${safeName}` });
+        console.warn(`[load-preloaded-track] файл не найден на диске: ${filePath}`);
+        socket.emit('track-load-error', { message: `Не удалось загрузить трек: ${safeName} (файла нет в public/tracks/)` });
         return;
       }
+      console.log(`[load-preloaded-track] файл найден, рассылаю track-loaded: ${safeName}`);
       io.emit('track-loaded', { name: safeName, url: `/tracks/${safeName}` });
     });
   });
 
-  // ── disconnect ──────────────────────────────────
   socket.on('disconnect', () => {
     conductorSocketIds.delete(socket.id);
 
@@ -291,9 +278,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// ───────────────────────────────────────────────
-// visualization-data каждые 33 мс, broadcast всем (для playMode = synth)
-// ───────────────────────────────────────────────
 setInterval(() => {
   io.emit('visualization-data', {
     bpm: orchestra.bpm,
@@ -303,17 +287,6 @@ setInterval(() => {
   });
 }, 33);
 
-// ───────────────────────────────────────────────
-// Загрузка треков: multer → диск (public/tracks/) → URL.
-//
-// ИЗМЕНЕНО: раньше файл шёл в memoryStorage → base64 → io.emit всем клиентам
-// через WebSocket. Трек 3-4 МБ в base64 ≈ 5 МБ текста — на телефоне POST-запрос
-// обрывался по таймауту ("Request aborted") ещё до того, как multer успевал
-// его дочитать. Теперь multer сразу пишет поток на диск (без буферизации в
-// памяти), сервер отвечает мгновенно, а клиенты получают короткий URL и грузят
-// аудио через обычный HTTP GET (его отдаёт express.static('public') — папка
-// tracks/ уже статическая).
-// ───────────────────────────────────────────────
 const TRACKS_DIR = path.join(__dirname, 'public', 'tracks');
 if (!fs.existsSync(TRACKS_DIR)) {
   fs.mkdirSync(TRACKS_DIR, { recursive: true });
@@ -324,8 +297,6 @@ const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a'];
 const trackStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, TRACKS_DIR),
   filename: (req, file, cb) => {
-    // Убираем всё, что не буквы/цифры/точка/дефис/подчёркивание, и добавляем
-    // временную метку спереди, чтобы не затирать одноимённые файлы разных загрузок.
     const safeOriginal = path.basename(file.originalname).replace(/[^a-zA-Z0-9.\-_]/g, '_');
     cb(null, `${Date.now()}-${safeOriginal}`);
   }
@@ -333,7 +304,7 @@ const trackStorage = multer.diskStorage({
 
 const upload = multer({
   storage: trackStorage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 МБ — этого хватает на 2-3 минуты mp3 в приличном качестве
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
@@ -343,12 +314,6 @@ const upload = multer({
   }
 });
 
-// Загрузка обёрнута вручную (не как обычный middleware в цепочке app.post),
-// чтобы поймать ошибки multer явно — включая "Request aborted", когда клиент
-// (медленный тоннель/телефон/закрытая вкладка) обрывает запрос на середине.
-// Без этого такие ошибки долетают до дефолтного Express-обработчика и
-// печатаются как голый стектрейс в консоль, а conductor.html зависает
-// на "Загружаю файл..." без внятного ответа.
 app.post('/upload-track', (req, res) => {
   upload.single('track')(req, res, (err) => {
     if (err) {
@@ -372,19 +337,22 @@ app.post('/upload-track', (req, res) => {
   });
 });
 
-// GET /api/tracks — список предзагруженных треков из public/tracks/
 app.get('/api/tracks', (req, res) => {
   fs.readdir(TRACKS_DIR, (err, files) => {
     if (err) {
+      console.warn(`[api/tracks] не удалось прочитать ${TRACKS_DIR}:`, err.message);
       return res.json({ tracks: [] });
     }
     const audioFiles = files.filter((f) => /\.(mp3|wav|ogg|m4a)$/i.test(f));
+    if (audioFiles.length === 0) {
+      console.warn(`[api/tracks] в ${TRACKS_DIR} нет аудиофайлов (.mp3/.wav/.ogg/.m4a) — список пуст, выпадающий список на пульте будет пустым`);
+    } else {
+      console.log(`[api/tracks] найдено треков: ${audioFiles.length} — ${audioFiles.join(', ')}`);
+    }
     res.json({ tracks: audioFiles });
   });
 });
 
-// Общий error-handler Express — подстраховка на случай, если ошибка всё же
-// всплывёт откуда-то ещё (не только из /upload-track). Должен идти последним.
 app.use((err, req, res, next) => {
   console.error('[express] необработанная ошибка запроса:', err.message);
   if (!res.headersSent) {
@@ -392,10 +360,24 @@ app.use((err, req, res, next) => {
   }
 });
 
-// ───────────────────────────────────────────────
 server.listen(PORT, () => {
   console.log(`🎭 Теневой оркестр запущен: http://localhost:${PORT}`);
   console.log(`   /player     — инструмент / пульт эффектов (телефон)`);
   console.log(`   /visuals    — визуализация (проектор)`);
   console.log(`   /conductor  — пульт дирижёра + хост-плеер`);
+
+  // Сразу видно при старте, есть ли вообще что грузить в remix-режиме —
+  // не нужно ждать, пока дирижёр откроет пульт и наткнётся на пустой список.
+  fs.readdir(TRACKS_DIR, (err, files) => {
+    if (err) {
+      console.warn(`⚠️  Не удалось прочитать ${TRACKS_DIR}:`, err.message);
+      return;
+    }
+    const audioFiles = files.filter((f) => /\.(mp3|wav|ogg|m4a)$/i.test(f));
+    if (audioFiles.length === 0) {
+      console.warn(`⚠️  public/tracks/ пуста — в Ремикс-режиме нечего выбрать из готовых треков. Положи туда .mp3/.wav/.ogg/.m4a файлы.`);
+    } else {
+      console.log(`🎵 Доступные треки (${audioFiles.length}): ${audioFiles.join(', ')}`);
+    }
+  });
 });

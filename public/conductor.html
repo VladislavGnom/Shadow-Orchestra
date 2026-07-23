@@ -58,6 +58,7 @@
     font-family: 'Courier New', monospace; font-size: 13px; letter-spacing: 1px; cursor: pointer;
   }
   #load-track-btn:hover { background: #444; }
+  #load-track-btn:disabled { opacity: 0.5; cursor: default; }
 
   #track-status { font-size: 12px; opacity: 0.75; min-height: 16px; }
 
@@ -166,9 +167,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 
   <script>
-    // ═══════════════════════════════════════════════════
-    // Socket.IO
-    // ═══════════════════════════════════════════════════
     const socket = io();
 
     socket.on('connect', () => {
@@ -183,12 +181,12 @@
     });
 
     socket.on('track-load-error', ({ message }) => {
+      console.error('[track-load-error]', message);
+      clearTrackLoadTimeout();
       trackStatusEl.textContent = message;
+      loadTrackBtn.disabled = false;
     });
 
-    // ═══════════════════════════════════════════════════
-    // Темп
-    // ═══════════════════════════════════════════════════
     const bpmSlider = document.getElementById('bpm-slider');
     const bpmValueEl = document.getElementById('bpm-value');
     bpmSlider.addEventListener('input', () => {
@@ -197,17 +195,11 @@
       socket.emit('conductor-command', { bpm });
     });
 
-    // ═══════════════════════════════════════════════════
-    // Тональность и гамма
-    // ═══════════════════════════════════════════════════
     const keySelect = document.getElementById('key-select');
     const scaleSelect = document.getElementById('scale-select');
     keySelect.addEventListener('change', () => socket.emit('conductor-command', { key: keySelect.value }));
     scaleSelect.addEventListener('change', () => socket.emit('conductor-command', { scale: scaleSelect.value }));
 
-    // ═══════════════════════════════════════════════════
-    // Визуальный режим (ambient/beat/chaos) — поле mode
-    // ═══════════════════════════════════════════════════
     const modeButtons = document.querySelectorAll('.mode-btn');
     modeButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -217,9 +209,6 @@
       });
     });
 
-    // ═══════════════════════════════════════════════════
-    // Режим исполнения (synth/remix) — поле playMode
-    // ═══════════════════════════════════════════════════
     const playmodeButtons = document.querySelectorAll('.playmode-btn');
     const remixBlock = document.getElementById('remix-block');
 
@@ -233,7 +222,6 @@
 
         socket.emit('conductor-command', { playMode });
 
-        // При возврате в синтезатор — глушим трек на хосте
         if (playMode === 'synth' && typeof Tone !== 'undefined' && Tone.Transport.state === 'started') {
           Tone.Transport.pause();
           trackStatusEl.textContent = 'Приостановлено (переключились в Синтезатор)';
@@ -241,9 +229,6 @@
       });
     });
 
-    // ═══════════════════════════════════════════════════
-    // Ремикс: загрузка трека
-    // ═══════════════════════════════════════════════════
     const trackFileInput = document.getElementById('track-file');
     const preloadedSelect = document.getElementById('preloaded-tracks');
     const loadTrackBtn = document.getElementById('load-track-btn');
@@ -252,50 +237,95 @@
     const pauseBtn = document.getElementById('pause-btn');
     const stopBtn = document.getElementById('stop-btn');
 
-    // Подтягиваем список предзагруженных треков
     fetch('/api/tracks')
       .then((r) => r.json())
       .then((data) => {
-        (data.tracks || []).forEach((name) => {
+        const tracks = data.tracks || [];
+        console.log('[tracks] найдено на сервере:', tracks);
+
+        if (tracks.length === 0) {
+          // Раньше список просто оставался пустым без объяснений — теперь видно причину
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = '(папка public/tracks/ пуста)';
+          opt.disabled = true;
+          preloadedSelect.appendChild(opt);
+          trackStatusEl.textContent = 'В public/tracks/ нет файлов — загрузите трек вручную (файлом)';
+          return;
+        }
+
+        tracks.forEach((name) => {
           const opt = document.createElement('option');
           opt.value = name;
           opt.textContent = name;
           preloadedSelect.appendChild(opt);
         });
       })
-      .catch(() => { /* если список не загрузился — просто останется пустым */ });
+      .catch((err) => {
+        console.error('[tracks] не удалось получить список:', err);
+        trackStatusEl.textContent = 'Не удалось получить список треков с сервера';
+      });
+
+    // Таймер ожидания ответа на load-preloaded-track — если сервер по какой-то
+    // причине не пришлёт ни 'track-loaded', ни 'track-load-error' (например,
+    // сокет-эвент потерялся), UI раньше молча зависал на "Загружаю...".
+    let trackLoadTimeoutId = null;
+
+    function clearTrackLoadTimeout() {
+      if (trackLoadTimeoutId) {
+        clearTimeout(trackLoadTimeoutId);
+        trackLoadTimeoutId = null;
+      }
+    }
 
     loadTrackBtn.addEventListener('click', async () => {
-      // Разблокируем Web Audio на хосте по этому клику (нужно один раз за сессию)
-      await Tone.start();
+      console.log('[load-track] клик по кнопке "Загрузить"');
+      loadTrackBtn.disabled = true;
 
-      if (trackFileInput.files[0]) {
-        const formData = new FormData();
-        formData.append('track', trackFileInput.files[0]);
-        trackStatusEl.textContent = 'Загружаю файл...';
+      try {
+        await Tone.start();
+        console.log('[load-track] Tone.start() выполнен, state:', Tone.context.state);
 
-        // ИЗМЕНЕНО: сервер теперь пишет файл на диск потоково (multer.diskStorage)
-        // и отвечает мгновенно с { ok, url } — никакого base64 в ответе.
-        // Сам плеер поднимается по событию 'track-loaded' ниже (сервер
-        // рассылает его всем клиентам после успешной записи на диск).
-        try {
+        if (trackFileInput.files[0]) {
+          const file = trackFileInput.files[0];
+          console.log('[load-track] выбран файл для загрузки:', file.name, file.size, 'байт');
+
+          const formData = new FormData();
+          formData.append('track', file);
+          trackStatusEl.textContent = 'Загружаю файл...';
+
           const res = await fetch('/upload-track', { method: 'POST', body: formData });
           const data = await res.json();
+          console.log('[load-track] ответ /upload-track:', data);
           if (!data.ok) throw new Error(data.error || 'Ошибка загрузки');
-        } catch (err) {
-          trackStatusEl.textContent = 'Ошибка: ' + err.message;
+          // Дальше событие 'track-loaded' придёт по сокету и поднимет плеер —
+          // кнопку разблокируем в его обработчике (см. ниже)
+
+        } else if (preloadedSelect.value) {
+          console.log('[load-track] выбран предзагруженный трек:', preloadedSelect.value);
+          trackStatusEl.textContent = 'Загружаю: ' + preloadedSelect.value;
+
+          clearTrackLoadTimeout();
+          trackLoadTimeoutId = setTimeout(() => {
+            console.warn('[load-track] нет ответа от сервера за 8 секунд — таймаут');
+            trackStatusEl.textContent = 'Сервер не ответил за 8 секунд. Проверь консоль сервера — возможно, файл не найден в public/tracks/.';
+            loadTrackBtn.disabled = false;
+          }, 8000);
+
+          socket.emit('load-preloaded-track', { filename: preloadedSelect.value });
+          // Кнопку разблокируем в обработчике 'track-loaded'/'track-load-error' ниже
+
+        } else {
+          alert('Выберите файл или трек из списка');
+          loadTrackBtn.disabled = false;
         }
-      } else if (preloadedSelect.value) {
-        trackStatusEl.textContent = 'Загружаю: ' + preloadedSelect.value;
-        socket.emit('load-preloaded-track', { filename: preloadedSelect.value });
-      } else {
-        alert('Выберите файл или трек из списка');
+      } catch (err) {
+        console.error('[load-track] ошибка:', err);
+        trackStatusEl.textContent = 'Ошибка: ' + err.message;
+        loadTrackBtn.disabled = false;
       }
     });
 
-    // ═══════════════════════════════════════════════════
-    // Хост-плеер: Tone.Player → PitchShift → Distortion → FeedbackDelay → Reverb → Filter → Speakers
-    // ═══════════════════════════════════════════════════
     let hostPlayer = null;
     let hostChain = null;
     let analyser = null;
@@ -314,11 +344,6 @@
     }
 
     function buildEffectChain() {
-      // ПРИМЕЧАНИЕ: используем Tone.Freeverb вместо Tone.Reverb для узла "reverb".
-      // Tone.Reverb.decay нельзя плавно менять в реальном времени — смена decay
-      // требует асинхронной перегенерации импульсного отклика (generate()),
-      // что вызывает щелчки/лаги при непрерывном управлении гироскопом.
-      // Freeverb.roomSize — обычный Signal, меняется в реальном времени без глитчей.
       const pitch = new Tone.PitchShift({ pitch: 0 });
       const distortion = new Tone.Distortion({ distortion: 0 });
       const delay = new Tone.FeedbackDelay({ delayTime: 0.25, feedback: 0 });
@@ -334,55 +359,68 @@
       return { pitch, distortion, delay, reverb, filter, input: pitch };
     }
 
-    // ИЗМЕНЕНО: сервер теперь шлёт { name, url } вместо { name, dataUrl }.
-    // url — короткий относительный путь вида /tracks/169...-song.mp3, который
-    // отдаёт express.static('public'); Tone.Player грузит его обычным HTTP GET,
-    // без base64 и без прохождения через WebSocket.
     socket.on('track-loaded', ({ name, url }) => {
+      console.log('[track-loaded] получено с сервера:', name, url);
+      clearTrackLoadTimeout();
       trackStatusEl.textContent = 'Загружаю трек: ' + name;
 
-      disposeHostAudio();
-      hostChain = buildEffectChain();
+      try {
+        disposeHostAudio();
+        hostChain = buildEffectChain();
+        console.log('[track-loaded] цепочка эффектов создана, гружу аудио по URL:', url);
 
-      hostPlayer = new Tone.Player({
-        url,
-        onload: () => {
-          document.getElementById('track-status').textContent = 'Играет: ' + name;
-          hostPlayer.sync().start(0);
-          Tone.Transport.start();
+        hostPlayer = new Tone.Player({
+          url,
+          onload: () => {
+            console.log('[track-loaded] Tone.Player загрузил буфер, запускаю воспроизведение');
+            document.getElementById('track-status').textContent = 'Играет: ' + name;
+            hostPlayer.sync().start(0);
+            Tone.Transport.start();
 
-          // Анализатор спектра для visuals.html (снимается после фильтра — конца цепочки)
-          analyser = new Tone.Analyser('fft', 32);
-          hostChain.filter.connect(analyser);
+            analyser = new Tone.Analyser('fft', 32);
+            hostChain.filter.connect(analyser);
 
-          spectrumInterval = setInterval(() => {
-            if (!analyser) return;
-            const values = analyser.getValue(); // Float32Array, дБ, примерно -100..0
-            const bins = Array.from(values).map((v) => Math.max(0, Math.min(255, Math.round((v + 100) * 2.55))));
-            socket.emit('spectrum-data', { bins });
-          }, 100); // 10 раз/сек — компромисс между плавностью и нагрузкой на сокет
-        },
-        onerror: (err) => {
-          trackStatusEl.textContent = 'Ошибка загрузки трека: ' + err;
-        }
-      }).connect(hostChain.input);
+            spectrumInterval = setInterval(() => {
+              if (!analyser) return;
+              const values = analyser.getValue();
+              const bins = Array.from(values).map((v) => Math.max(0, Math.min(255, Math.round((v + 100) * 2.55))));
+              socket.emit('spectrum-data', { bins });
+            }, 100);
+
+            loadTrackBtn.disabled = false;
+          },
+          onerror: (err) => {
+            console.error('[track-loaded] Tone.Player не смог загрузить файл:', err);
+            trackStatusEl.textContent = 'Ошибка загрузки трека (проверь, что файл ' + url + ' доступен): ' + err;
+            loadTrackBtn.disabled = false;
+          }
+        }).connect(hostChain.input);
+      } catch (err) {
+        console.error('[track-loaded] исключение при создании плеера/цепочки:', err);
+        trackStatusEl.textContent = 'Ошибка инициализации плеера: ' + err.message;
+        loadTrackBtn.disabled = false;
+      }
     });
 
     socket.on('effect-change', ({ role, value }) => {
-      if (!hostChain) return;
+      if (!hostChain) {
+        // Это ожидаемо ДО того, как загружен трек — но если это печатается
+        // постоянно, пока трек уже вроде бы играет, значит track-loaded
+        // не долетел до этой вкладки, либо hostChain был случайно обнулён.
+        console.warn('[effect-change] пришло от телефона, но hostChain ещё не создан (трек не загружен) — игнорирую:', role, value);
+        return;
+      }
       switch (role) {
         case 'filter':
           hostChain.filter.frequency.rampTo(value, 0.05);
           break;
         case 'reverb':
-          // value приходит в диапазоне 0..1 (roomSize), см. player.html
           hostChain.reverb.roomSize.rampTo(value, 0.05);
           break;
         case 'delay':
           hostChain.delay.feedback.rampTo(value, 0.05);
           break;
         case 'pitch':
-          // Tone.PitchShift.pitch — полутоны (-12..+12), НЕ playbackRate
           hostChain.pitch.pitch = value;
           break;
         case 'distortion':
@@ -391,7 +429,6 @@
       }
     });
 
-    // Play/Pause/Stop — через Tone.Transport, чтобы Pause реально сохранял позицию
     playBtn.addEventListener('click', async () => {
       await Tone.start();
       if (hostPlayer) {
@@ -412,9 +449,6 @@
       }
     });
 
-    // ═══════════════════════════════════════════════════
-    // Обратный отсчёт
-    // ═══════════════════════════════════════════════════
     const countdownBtn = document.getElementById('countdown-btn');
     const countdownOverlay = document.getElementById('countdown-overlay');
     const countdownOverlayValue = document.getElementById('countdown-overlay-value');

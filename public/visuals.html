@@ -29,6 +29,14 @@
   //    НЕ готовое 0..1. Нормализуем сами через REMIX_VALUE_RANGE — те же
   //    диапазоны, что в player.html (handleRemixMotion), чтобы кружки и
   //    искажения спектра масштабировались правильно независимо от роли.
+  //
+  // 3) Переключение playMode ambient↔remix — это НЕ баг и НЕ "визуализация
+  //    сломалась": при playMode='remix' synth-сцена (орбиты/частицы) плавно
+  //    гаснет (synthOpacity → 0) и уступает место remix-сцене (спектр +
+  //    слоты эффектов). Если кажется, что старая визуализация "перестала
+  //    работать" сразу после переключения в Ремикс — это ожидаемое
+  //    поведение. Ниже добавлен console.log при каждой смене playMode,
+  //    чтобы это было видно явно, а не приходилось гадать.
   // ═══════════════════════════════════════════════════
 
   // ─── Цвета/константы: synth ──────────────────────────
@@ -52,8 +60,6 @@
     return constrain((value - lo) / (hi - lo), 0, 1);
   }
 
-  // Формат значения под кружком — те же форматы, что показывает сам телефон
-  // (player.html / updateRemixVisuals), чтобы дирижёр видел то же число.
   function formatRemixValue(role, raw) {
     if (raw === null || raw === undefined) return '—';
     switch (role) {
@@ -66,10 +72,6 @@
     }
   }
 
-  // Несколько телефонов могут иметь одну и ту же remix-роль (ролей 5, игроков
-  // может быть больше — роли идут по кругу, см. server.js rolesForPlayMode).
-  // У каждой роли на экране один фиксированный «слот» — усредняем всех
-  // активных игроков этой роли в одно значение для этого слота.
   function aggregateRemixRole(role) {
     let sumRaw = 0, count = 0;
     for (const id of Object.keys(instruments)) {
@@ -89,20 +91,16 @@
   // ═══════════════════════════════════════════════════
   let instruments = {};
   let bpm = 120;
-  let mode = 'ambient';       // ambient | beat | chaos — независимая ось, действует в обоих playMode
-  let playMode = 'synth';     // synth | remix
+  let mode = 'ambient';
+  let playMode = 'synth';
+  let lastLoggedPlayMode = null;
 
   let latestSpectrumBins = new Array(32).fill(0);
 
-  // ─── Синтезатор: локальное состояние ─────────────────
   let waveOffset = 0;
   let particles = [];
   const MAX_PARTICLES = 300;
 
-  // ─── Плавное переключение playMode ───────────────────
-  // Обе сцены рендерятся одновременно во время перехода, каждая со своим
-  // множителем прозрачности 0..1 — так не бывает «пустого» кадра между
-  // режимами (сцена, из которой уходим, ещё видна, пока новая проявляется).
   let synthOpacity = 1;
   let remixOpacity = 0;
   const TRANSITION_MS = 500;
@@ -128,9 +126,13 @@
     bpm = data.bpm || bpm;
     mode = data.mode || mode;
     playMode = data.playMode || 'synth';
+
+    if (playMode !== lastLoggedPlayMode) {
+      console.log('[visuals] playMode →', playMode, '(synth-орбиты гаснут/остаются в зависимости от этого поля)');
+      lastLoggedPlayMode = playMode;
+    }
   });
 
-  // Только пока хост реально проигрывает трек в remix-режиме
   socket.on('spectrum-data', ({ bins }) => {
     if (Array.isArray(bins)) latestSpectrumBins = bins;
   });
@@ -150,7 +152,6 @@
   }
 
   function draw() {
-    // Длинный хвост затухания — общий для обоих режимов
     background(0, 0, 0, 12);
 
     const dt = deltaTime || 16.7;
@@ -173,7 +174,7 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // РЕЖИМ «СИНТЕЗАТОР» — как было: метроном, орбиты, частицы, кольца
+  // РЕЖИМ «СИНТЕЗАТОР»
   // ═══════════════════════════════════════════════════════════════════════
   function drawSynthScene(op) {
     drawMetronome(op);
@@ -194,7 +195,7 @@
   }
 
   function drawMetronome(op) {
-    const beatPhase = (frameCount * (bpm / 60) / 60); // допущение: 60 fps
+    const beatPhase = (frameCount * (bpm / 60) / 60);
     const pulse = sin(beatPhase * TWO_PI);
     const size = 100 + pulse * 50;
 
@@ -289,7 +290,7 @@
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // РЕЖИМ «РЕМИКС» — спектрограмма в центре + 5 фиксированных слотов эффектов
+  // РЕЖИМ «РЕМИКС»
   // ═══════════════════════════════════════════════════════════════════════
   function drawRemixScene(op) {
     const effectData = {
@@ -306,7 +307,6 @@
     const positions = getEffectPositions();
     const center = { x: width / 2, y: height / 2 };
 
-    // Линии связи — рисуем до кружков, чтобы кружки лежали поверх линий
     for (const role of ['filter', 'reverb', 'delay', 'pitch']) {
       drawConnectorLine(positions[role], center, REMIX_ROLE_HUE[role], effectData[role], op);
     }
@@ -315,7 +315,6 @@
       drawEffectSlot(role, positions[role], effectData[role], op);
     }
 
-    // Distortion — в центре, поверх спектра, рисуется последним и агрессивнее
     drawEffectSlot('distortion', positions.distortion, effectData.distortion, op, true);
   }
 
@@ -335,23 +334,18 @@
     return { x: width / 2 - w / 2, y: height / 2 - h / 2, w, h };
   }
 
-  // ─── Спектрограмма + искажения от эффектов ───────────
   function drawSpectrogram(spec, effectData, op) {
     const bins = latestSpectrumBins;
     const barCount = bins.length || 32;
     const barWidth = spec.w / barCount;
 
-    // «Дыхание» в такт BPM — лёгкая синхронная пульсация высоты поверх
-    // реальных данных спектра, чтобы сцена не выглядела мёртвой в тихие моменты
     const beatPhase = (frameCount * (bpm / 60) / 60);
     const breathe = 1 + 0.08 * sin(beatPhase * TWO_PI);
 
-    // Pitch: сдвигает весь спектр по горизонтали
     const pitchShift = effectData.pitch.active
       ? map(effectData.pitch.raw, -12, 12, -40, 40)
       : 0;
 
-    // Filter: какую половину частот затемнять и насколько
     const filterActive = effectData.filter.active && effectData.filter.normalized > 0.3 - 1e-6;
     const filterDarkenHigh = effectData.filter.active && effectData.filter.normalized > 0.5;
     const filterAmount = effectData.filter.active ? effectData.filter.normalized : 0;
@@ -368,7 +362,6 @@
       return affected ? constrain(1 - filterAmount * 0.8, 0.15, 1) : 1;
     }
 
-    // Delay: несколько эхо-повторов спектра со смещением вправо и затуханием
     if (effectData.delay.active && effectData.delay.normalized > 0.05) {
       const echoCount = 3;
       for (let e = echoCount; e >= 1; e--) {
@@ -384,7 +377,6 @@
       }
     }
 
-    // Reverb: размытые полупрозрачные копии со случайным небольшим смещением
     if (effectData.reverb.active && effectData.reverb.normalized > 0.05) {
       const blurCopies = 2;
       for (let c = 0; c < blurCopies; c++) {
@@ -400,7 +392,6 @@
       }
     }
 
-    // Основные полосы спектра — радуга по частоте, с учётом затемнения от filter
     for (let i = 0; i < barCount; i++) {
       const bh = barHeightAt(i) * darkenFactorAt(i);
       const hue = map(i, 0, barCount - 1, 0, 300);
@@ -409,12 +400,10 @@
       fill(hue, 70, lightness, 75 * op);
       rect(spec.x + i * barWidth + pitchShift, spec.y + spec.h - bh, barWidth * 0.8, bh);
 
-      // Зеркальное отражение сверху блока — лёгкая симметрия
       fill(hue, 70, lightness, 25 * op);
       rect(spec.x + i * barWidth + pitchShift, spec.y, barWidth * 0.8, bh * 0.3);
     }
 
-    // Distortion: «шумовые» полосы случайной высоты поверх спектра
     if (effectData.distortion.active && effectData.distortion.normalized > 0.05) {
       const noiseBars = floor(effectData.distortion.normalized * barCount * 0.5);
       for (let n = 0; n < noiseBars; n++) {
@@ -442,7 +431,6 @@
     let x = pos.x;
     let y = pos.y;
     if (aggressive && data.active) {
-      // Distortion — «агрессивное» дрожание, масштабируется вместе с активностью
       x += random(-3, 3) * normalized;
       y += random(-3, 3) * normalized;
     }
@@ -450,24 +438,20 @@
     const baseAlpha = data.active ? 1 : 0.3;
     const glowStrength = data.active ? 20 + normalized * 40 : 8;
 
-    // Свечение
     fill(hue, 60, 100, glowStrength * 0.3 * baseAlpha * op);
     ellipse(x, y, size * 2.4, size * 2.4);
     fill(hue, 60, 100, glowStrength * 0.5 * baseAlpha * op);
     ellipse(x, y, size * 1.6, size * 1.6);
 
-    // Сам кружок
     fill(hue, 65, 100, 85 * baseAlpha * op);
     ellipse(x, y, size, size);
 
-    // Подпись роли
     push();
     textAlign(CENTER, CENTER);
     textSize(11);
     fill(0, 0, 100, 70 * baseAlpha * op);
     text(REMIX_LABEL[role], x, y - size / 2 - 14);
 
-    // Значение параметра
     textSize(10);
     fill(0, 0, 100, 55 * baseAlpha * op);
     text(formatRemixValue(role, data.raw), x, y + size / 2 + 14);
