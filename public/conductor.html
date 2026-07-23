@@ -69,7 +69,9 @@
   #key-block   { border-left-color: #a29bfe; }
   #mode-block  { border-left-color: #ffe66d; }
   #playmode-block { border-left-color: #fd79a8; }
-  #remix-block { border-left-color: #fd79a8; display: none; flex-direction: column; gap: 12px; }
+  #remix-block { 
+    border-left-color: #fd79a8; display: none; flex-direction: column; gap: 12px;
+   }
   #show-block  { border-left-color: #555; }
 
   .tempo-row { display: flex; align-items: center; gap: 12px; }
@@ -138,6 +140,33 @@
   #track-status { font-size: clamp(11px, 2.4vw, 13px); opacity: 0.75; min-height: 16px; }
 
   .transport-row { display: flex; gap: 8px; }
+  .playlist-controls { display: flex; gap: 8px; }
+  .playlist-controls button {
+    flex: 1; min-height: 40px; padding: 8px;
+    background: rgba(255,255,255,0.05); color: #fff;
+    border: 1px solid #333; border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(11px, 2.4vw, 13px);
+    cursor: pointer; touch-action: manipulation;
+  }
+  .playlist-controls button:hover { background: rgba(255,255,255,0.12); }
+
+  #playlist-list {
+    list-style: none;
+    display: flex; flex-direction: column; gap: 4px;
+    max-height: 160px; overflow-y: auto;
+    font-size: clamp(11px, 2.2vw, 12px);
+  }
+  #playlist-list li {
+    padding: 6px 8px; border-radius: 4px;
+    background: rgba(255,255,255,0.03);
+    opacity: 0.6;
+  }
+  #playlist-list li.current {
+    opacity: 1;
+    background: rgba(78, 205, 196, 0.15);
+    border-left: 2px solid #4ecdc4;
+  }
   .transport-row button {
     flex: 1;
     min-height: 44px;
@@ -263,6 +292,14 @@
       </div>
     </div>
 
+    <!-- Очередь треков -->
+    <div class="playlist-controls">
+      <button id="queue-add-btn">➕ В очередь</button>
+      <button id="queue-next-btn">⏭ Далее</button>
+      <button id="queue-clear-btn">🗑 Очистить</button>
+    </div>
+    <ul id="playlist-list"></ul>
+
     <div class="block" id="show-block">
       <div class="block-label">Шоу</div>
       <button id="countdown-btn">⏱ ОБРАТНЫЙ ОТСЧЁТ</button>
@@ -347,6 +384,73 @@
     const playBtn = document.getElementById('play-btn');
     const pauseBtn = document.getElementById('pause-btn');
     const stopBtn = document.getElementById('stop-btn');
+
+    // ═══════════════════════════════════════════════════
+    // Очередь треков (плейлист)
+    // ═══════════════════════════════════════════════════
+    let playlist = []; // [{ url, name }]
+    let currentTrackIndex = -1;
+    let queueAdvanceEventId = null; // Tone.Transport.scheduleOnce id — авто-переход на следующий трек
+
+    const queueAddBtn = document.getElementById('queue-add-btn');
+    const queueNextBtn = document.getElementById('queue-next-btn');
+    const queueClearBtn = document.getElementById('queue-clear-btn');
+    const playlistListEl = document.getElementById('playlist-list');
+
+    function renderPlaylist() {
+      playlistListEl.innerHTML = '';
+      playlist.forEach((track, index) => {
+        const li = document.createElement('li');
+        li.textContent = track.name;
+        if (index === currentTrackIndex) li.classList.add('current');
+        playlistListEl.appendChild(li);
+      });
+    }
+
+    // Переиспользуем существующий путь load-preloaded-track → track-loaded,
+    // а не дублируем логику создания плеера/цепочки — она уже вся в обработчике ниже.
+    function playTrackAt(index) {
+      if (index < 0 || index >= playlist.length) return;
+      currentTrackIndex = index;
+      const track = playlist[index];
+      renderPlaylist();
+      socket.emit('track-changed', { name: track.name });
+      trackStatusEl.textContent = 'Загружаю: ' + track.name;
+      socket.emit('load-preloaded-track', { filename: track.name });
+    }
+
+    function playNextInQueue() {
+      if (currentTrackIndex + 1 < playlist.length) {
+        playTrackAt(currentTrackIndex + 1);
+      } else {
+        trackStatusEl.textContent = 'Очередь закончилась';
+      }
+    }
+
+    queueAddBtn.addEventListener('click', () => {
+      if (!preloadedSelect.value) {
+        alert('Выберите трек из списка "готовых", чтобы добавить его в очередь (файл с телефона сначала загрузите кнопкой "Загрузить")');
+        return;
+      }
+      playlist.push({ url: `/tracks/${preloadedSelect.value}`, name: preloadedSelect.value });
+      renderPlaylist();
+      if (currentTrackIndex === -1) playTrackAt(0); // если ничего не играет — запускаем сразу
+    });
+
+    queueNextBtn.addEventListener('click', () => {
+      if (queueAdvanceEventId !== null) {
+        Tone.Transport.clear(queueAdvanceEventId);
+        queueAdvanceEventId = null;
+      }
+      playNextInQueue();
+    });
+
+    queueClearBtn.addEventListener('click', () => {
+      // Чистит только ОЖИДАЮЩИЕ треки, текущий играющий не трогает
+      playlist = currentTrackIndex >= 0 ? [playlist[currentTrackIndex]] : [];
+      currentTrackIndex = playlist.length > 0 ? 0 : -1;
+      renderPlaylist();
+    });
 
     fetch('/api/tracks')
       .then((r) => r.json())
@@ -444,6 +548,11 @@
 
     function disposeHostAudio() {
       if (spectrumInterval) { clearInterval(spectrumInterval); spectrumInterval = null; }
+      if (queueAdvanceEventId !== null) { Tone.Transport.clear(queueAdvanceEventId); queueAdvanceEventId = null; } // ← новое
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+
+      if (spectrumInterval) { clearInterval(spectrumInterval); spectrumInterval = null; }
       Tone.Transport.stop();
       Tone.Transport.cancel();
       if (hostPlayer) { hostPlayer.dispose(); hostPlayer = null; }
@@ -487,6 +596,16 @@
             document.getElementById('track-status').textContent = 'Играет: ' + name;
             hostPlayer.sync().start(0);
             Tone.Transport.start();
+
+            // ← новое: если в очереди есть следующий трек — планируем переход
+            // ровно на длительность буфера. Очищается в disposeHostAudio(),
+            // так что ручной Stop/новая загрузка не вызовут случайный автопереход.
+            if (currentTrackIndex >= 0 && currentTrackIndex + 1 < playlist.length) {
+              queueAdvanceEventId = Tone.Transport.scheduleOnce(() => {
+                queueAdvanceEventId = null;
+                playNextInQueue();
+              }, hostPlayer.buffer.duration);
+            }
 
             analyser = new Tone.Analyser('fft', 32);
             hostChain.filter.connect(analyser);

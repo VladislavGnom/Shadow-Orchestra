@@ -22,7 +22,8 @@ const PORT = 3000;
 // ───────────────────────────────────────────────
 // Раздача статики + чистые пути
 // ───────────────────────────────────────────────
-app.use(express.static('public'));
+// app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.get('/player', (req, res) => res.sendFile(__dirname + '/public/player.html'));
 app.get('/visuals', (req, res) => res.sendFile(__dirname + '/public/visuals.html'));
 app.get('/conductor', (req, res) => res.sendFile(__dirname + '/public/conductor.html'));
@@ -265,6 +266,11 @@ io.on('connection', (socket) => {
       console.log(`[load-preloaded-track] файл найден, рассылаю track-loaded: ${safeName}`);
       io.emit('track-loaded', { name: safeName, url: `/tracks/${safeName}` });
     });
+  });
+
+  socket.on('track-changed', (data) => {
+    if (socket.clientType !== 'conductor') return;
+    io.emit('track-changed', data);
   });
 
   socket.on('disconnect', () => {

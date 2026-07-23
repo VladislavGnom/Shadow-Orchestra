@@ -80,8 +80,12 @@
       calc(16px + env(safe-area-inset-right))
       calc(16px + env(safe-area-inset-bottom))
       calc(16px + env(safe-area-inset-left));
-    transition: background 0.3s;
+    transition: background-color 0.15s ease-out; /* было: transition: background 0.3s; */
     background: hsl(0, 70%, 5%);
+  }
+
+  #instrument-screen.strobe {
+    transition: none; /* мгновенные вспышки при тряске, без плавного перехода */
   }
 
   #playmode-badge {
@@ -179,9 +183,22 @@
     const SYNTH_ROLE_COLOR = { bass: '#ff6b6b', pad: '#4ecdc4', lead: '#ffe66d', arp: '#a29bfe', fx: '#fd79a8' };
 
     // Цвета для ролей ремикса — в ТЗ не заданы явно, выбраны по аналогии со стилем проекта
-    const REMIX_ROLE_HUE = { filter: 200, reverb: 280, delay: 320, pitch: 40, distortion: 0 };
+    const REMIX_ROLE_HUE = { filter: 200, reverb: 280, delay: 120, pitch: 40, distortion: 0 }; // delay: 320 → 120
     const REMIX_ROLE_COLOR = { filter: '#4ecdc4', reverb: '#a29bfe', delay: '#fd79a8', pitch: '#ffe66d', distortion: '#ff6b6b' };
     const REMIX_LABEL_RU = { filter: 'Фильтр', reverb: 'Реверб', delay: 'Дилей', pitch: 'Питч', distortion: 'Дисторшн' };
+    // Полный спектр по 12 полутонам, шаг 30°: C=0(красный) ... G=210(синий) ... B=330
+    const NOTE_HUE = {
+      'C': 0, 'C#': 30, 'D': 60, 'D#': 90, 'E': 120, 'F': 150,
+      'F#': 180, 'G': 210, 'G#': 240, 'A': 270, 'A#': 300, 'B': 330
+    };
+    function hueFromNote(note) {
+      const pitchClass = note.replace(/\d+$/, ''); // "C#4" → "C#"
+      return NOTE_HUE[pitchClass] ?? 0;
+    }
+
+    let lastRemixNormalized = null;
+    let lastRemixTimestamp = 0;
+    const SHAKE_RATE_THRESHOLD = 1.5; // normalized-единиц в секунду — порог для стробоскопа
 
     const THROTTLE_MS = 50;
     let lastMotionSent = 0;
@@ -268,7 +285,8 @@
     // чистит ресурсы предыдущего режима
     // ═══════════════════════════════════════════════════
     function applyInit(role, settings) {
-      cleanupSynth(); // на случай перехода remix → synth или смены роли внутри synth
+      cleanupSynth();
+      lastRemixNormalized = null; // ← новое: сброс детектора тряски при смене роли/playMode
 
       currentRole = role;
       currentPlayMode = settings.playMode || 'synth';
@@ -369,7 +387,7 @@
     function updateRemixVisuals(role, value) {
       const hue = REMIX_ROLE_HUE[role] ?? 0;
       let displayText = '';
-      let normalized = 0; // 0..1 для полоски громкости
+      let normalized = 0;
 
       switch (role) {
         case 'filter':
@@ -393,12 +411,21 @@
           normalized = value;
           break;
       }
-
       normalized = Math.max(0, Math.min(1, normalized));
-      const lightness = 5 + normalized * 15;
 
+      // Тряска: резкое изменение параметра за короткое время → стробоскоп
+      const now = performance.now();
       const screen = document.getElementById('instrument-screen');
-      screen.style.backgroundColor = `hsl(${hue}, 70%, ${lightness}%)`;
+      if (lastRemixNormalized !== null) {
+        const dt = (now - lastRemixTimestamp) / 1000;
+        const rate = dt > 0 ? Math.abs(normalized - lastRemixNormalized) / dt : 0;
+        screen.classList.toggle('strobe', rate > SHAKE_RATE_THRESHOLD);
+      }
+      lastRemixNormalized = normalized;
+      lastRemixTimestamp = now;
+
+      const lightness = normalized > 0.03 ? 5 + normalized * 55 : 4; // пауза — тлеющий оттенок
+      screen.style.backgroundColor = `hsl(${hue}, 75%, ${lightness}%)`;
 
       const noteDisplay = document.getElementById('note-display');
       noteDisplay.textContent = displayText;
@@ -459,11 +486,15 @@
     }
 
     function updateSynthVisuals(note, velocity) {
-      const hue = SYNTH_ROLE_HUE[currentRole] ?? 0;
-      const lightness = 5 + velocity * 15;
-
+      const hue = hueFromNote(note);
       const screen = document.getElementById('instrument-screen');
-      screen.style.backgroundColor = `hsl(${hue}, 70%, ${lightness}%)`;
+
+      if (velocity > 0.1) {
+        const lightness = 20 + velocity * 45; // вспышка
+        screen.style.backgroundColor = `hsl(${hue}, 80%, ${lightness}%)`;
+      } else {
+        screen.style.backgroundColor = `hsl(${hue}, 60%, 4%)`; // пауза — тлеющий оттенок
+      }
 
       const noteDisplay = document.getElementById('note-display');
       noteDisplay.textContent = note;
