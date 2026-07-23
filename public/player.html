@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Теневой оркестр — Инструмент</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+    touch-action: none;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+  }
+
+  /* ═══════════════════════════════════════════════
+     Оверлей активации — блокирует всё до успешного
+     прохождения обоих шагов (датчики + аудио)
+     ═══════════════════════════════════════════════ */
+  #activate-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 20px;
+    text-align: center;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  #activate-emoji {
+    font-size: 64px;
+  }
+
+  #activate-title {
+    font-size: 18px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  #activate-btn {
+    background: transparent;
+    border: 2px solid #4ecdc4;
+    color: #4ecdc4;
+    font-family: 'Courier New', monospace;
+    font-size: 18px;
+    letter-spacing: 3px;
+    padding: 16px 40px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  #activate-btn:active {
+    background: rgba(78, 205, 196, 0.15);
+  }
+
+  #activate-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  /* ═══════════════════════════════════════════════
+     Основной экран инструмента (скрыт до активации)
+     ═══════════════════════════════════════════════ */
+  #instrument-screen {
+    display: none;
+    width: 100%;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: background-color 0.15s ease-out;
+    background: hsl(0, 70%, 5%);
+  }
+
+  #role-label {
+    position: absolute;
+    top: 8%;
+    font-size: 14px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+
+  #note-display {
+    font-size: 72px;
+    font-weight: bold;
+    letter-spacing: 2px;
+  }
+
+  #volume-bar-container {
+    position: absolute;
+    bottom: 6%;
+    width: 70%;
+    height: 10px;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 5px;
+    overflow: hidden;
+  }
+
+  #volume-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: currentColor;
+    transition: width 0.1s ease-out;
+  }
+</style>
+</head>
+<body>
+
+  <!-- ═══ Оверлей активации ═══ -->
+  <div id="activate-overlay">
+    <div id="activate-emoji">🎭</div>
+    <div id="activate-title">ТЕНЕВОЙ ОРКЕСТР</div>
+    <button id="activate-btn">АКТИВИРОВАТЬ</button>
+  </div>
+
+  <!-- ═══ Основной экран инструмента ═══ -->
+  <div id="instrument-screen">
+    <div id="role-label">—</div>
+    <div id="note-display">—</div>
+    <div id="volume-bar-container">
+      <div id="volume-bar-fill"></div>
+    </div>
+  </div>
+
+  <!-- CDN: Socket.IO (раздаётся сервером) -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- CDN: Tone.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <script>
+    // ═══════════════════════════════════════════════════
+    // Состояние клиента
+    // ═══════════════════════════════════════════════════
+    let currentRole = null;
+    let currentNote = 'C3';
+    let currentVelocity = 0;
+    let orchestraSettings = { bpm: 120, key: 'C', scale: 'minor', mode: 'ambient' };
+
+    let synth = null;
+    let reverb = null;
+    let socket = null;
+
+    const ROLE_HUE = { bass: 0, pad: 180, lead: 50, arp: 260, fx: 330 };
+    const ROLE_COLOR = {
+      bass: '#ff6b6b',
+      pad: '#4ecdc4',
+      lead: '#ffe66d',
+      arp: '#a29bfe',
+      fx: '#fd79a8'
+    };
+
+    const THROTTLE_MS = 50;
+    let lastMotionSent = 0;
+
+    // ═══════════════════════════════════════════════════
+    // Экран активации
+    //
+    // КРИТИЧНО для iOS: requestPermission() должен быть ПЕРВЫМ
+    // вызовом в обработчике клика — пока браузер ещё считает,
+    // что мы внутри пользовательского жеста. Если перед ним
+    // поставить await Tone.start() (или любой другой await),
+    // iOS теряет связь с жестом и requestPermission() падает
+    // с "requires a user gesture to prompt".
+    //
+    // Поэтому строгий порядок:
+    //   1) DeviceOrientationEvent.requestPermission()
+    //   2) Tone.start()
+    //   3) скрыть оверлей
+    //   4) startOrchestra()
+    // ═══════════════════════════════════════════════════
+    const activateBtn = document.getElementById('activate-btn');
+    const activateOverlay = document.getElementById('activate-overlay');
+
+    activateBtn.addEventListener('click', async () => {
+      console.log('Кнопка нажата');
+      activateBtn.disabled = true;
+
+      try {
+        // 1) СНАЧАЛА — разрешение на датчики, пока связь с жестом жива
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+          console.log('iOS: запрашиваю датчики');
+
+          const permission = await DeviceOrientationEvent.requestPermission();
+          console.log('Результат: ' + permission);
+
+          if (permission !== 'granted') {
+            alert('Доступ к датчикам движения отклонён. Разрешите его в Настройки → Safari → Движение и ориентация, затем обновите страницу.');
+            activateBtn.disabled = false;
+            return; // оверлей НЕ скрываем
+          }
+
+          console.log('Датчики разрешены');
+        }
+        // Android / десктоп — requestPermission отсутствует, шаг пропускается
+
+        // 2) ПОТОМ — разблокировка Web Audio API
+        console.log('Запускаю Tone.start()');
+        await Tone.start();
+        console.log('Tone.start() выполнен');
+
+        // 3) Скрываем оверлей — только после успешных шагов 1 и 2
+        console.log('Скрываю оверлей');
+        activateOverlay.style.display = 'none';
+        document.getElementById('instrument-screen').style.display = 'flex';
+
+        // 4) Запускаем основную логику
+        console.log('Вызываю startOrchestra');
+        startOrchestra();
+      } catch (err) {
+        console.error('Ошибка активации:', err);
+        alert('Ошибка активации: ' + err.message);
+        activateBtn.disabled = false;
+        // оверлей НЕ скрываем
+      }
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Основная логика — запускается только после активации.
+    // Первый вызов — регистрация на сервере как player.
+    // ═══════════════════════════════════════════════════
+    function startOrchestra() {
+      socket = io();
+      socket.emit('register', { type: 'player' });
+
+      attachSocketListeners();
+      startOrientationListener();
+
+      Tone.Transport.start();
+    }
+
+    // ── Socket.IO ────────────────────────────────────────
+    function attachSocketListeners() {
+      // init: приходит один раз после register — роль + текущие настройки
+      socket.on('init', ({ role, settings }) => {
+        currentRole = role;
+        orchestraSettings = settings;
+
+        document.getElementById('role-label').textContent = role;
+        document.getElementById('role-label').style.color = ROLE_COLOR[role] || '#fff';
+        document.getElementById('note-display').style.color = ROLE_COLOR[role] || '#fff';
+        document.getElementById('volume-bar-fill').style.color = ROLE_COLOR[role] || '#fff';
+
+        Tone.Transport.bpm.value = settings.bpm;
+        setupSoundForRole(role);
+      });
+
+      // orchestra-settings: broadcast при изменении настроек дирижёром
+      socket.on('orchestra-settings', (settings) => {
+        orchestraSettings = settings;
+        if (typeof Tone !== 'undefined' && Tone.Transport) {
+          Tone.Transport.bpm.value = settings.bpm;
+        }
+      });
+
+      socket.on('sound-update', ({ note, velocity }) => {
+        currentNote = note;
+        currentVelocity = velocity;
+        updateVisuals(note, velocity);
+        handleReactiveSound(note, velocity);
+      });
+    }
+
+    // ── Датчики (DeviceOrientation) ─────────────────────
+    function startOrientationListener() {
+      window.addEventListener('deviceorientation', (event) => {
+        const now = Date.now();
+        if (now - lastMotionSent < THROTTLE_MS) return;
+        lastMotionSent = now;
+
+        const gamma = event.gamma ?? 0;
+        const beta = event.beta ?? 0;
+
+        if (socket) {
+          socket.emit('motion', {
+            gamma: gamma,
+            beta: beta,
+            acceleration: 0 // акселерометр пока не используем
+          });
+        }
+      });
+    }
+
+    // ═══════════════════════════════════════════════════
+    // Синтез звука под роль
+    // ═══════════════════════════════════════════════════
+    async function setupSoundForRole(role) {
+      reverb = new Tone.Reverb({
+        decay: role === 'fx' ? 5 : 3,
+        wet: 0.5
+      }).toDestination();
+      await reverb.generate();
+
+      switch (role) {
+        case 'bass':
+          synth = new Tone.MembraneSynth().connect(reverb);
+          Tone.Transport.scheduleRepeat((time) => {
+            if (currentVelocity > 0.05) {
+              const freq = Tone.Frequency(currentNote).transpose(-12);
+              synth.triggerAttackRelease(freq, '4n', time, currentVelocity);
+            }
+          }, '4n');
+          break;
+
+        case 'pad':
+          synth = new Tone.Synth({
+            oscillator: { type: 'sine' },
+            envelope: { attack: 0.5, release: 2 }
+          }).connect(reverb);
+          break;
+
+        case 'lead':
+          synth = new Tone.Synth({
+            oscillator: { type: 'sawtooth' },
+            envelope: { attack: 0.02, release: 1 }
+          }).connect(reverb);
+          break;
+
+        case 'arp':
+          synth = new Tone.Synth({
+            oscillator: { type: 'square' },
+            envelope: { attack: 0.01, release: 0.3 }
+          }).connect(reverb);
+          Tone.Transport.scheduleRepeat((time) => {
+            if (currentVelocity > 0.05) {
+              synth.triggerAttackRelease(currentNote, '8n', time, currentVelocity);
+            }
+          }, '8n');
+          break;
+
+        case 'fx':
+          synth = new Tone.Synth({
+            oscillator: { type: 'triangle' },
+            envelope: { attack: 0.8, release: 3 }
+          }).connect(reverb);
+          break;
+      }
+    }
+
+    // Реактивные роли (pad/lead/fx) играют напрямую по sound-update.
+    // Длительность ноты для lead в ТЗ явно не задана — взял '4n' как
+    // разумное среднее между pad ('2n') и arp/fx.
+    const REACTIVE_DURATION = { pad: '2n', lead: '4n', fx: '1n' };
+
+    function handleReactiveSound(note, velocity) {
+      if (!synth || !currentRole) return;
+      if (!(currentRole in REACTIVE_DURATION)) return; // bass/arp играют через scheduleRepeat
+      if (velocity > 0.1) {
+        synth.triggerAttackRelease(note, REACTIVE_DURATION[currentRole], undefined, velocity);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════
+    // Визуальная обратная связь
+    // ═══════════════════════════════════════════════════
+    function updateVisuals(note, velocity) {
+      const hue = ROLE_HUE[currentRole] ?? 0;
+      const lightness = 5 + velocity * 15;
+
+      const screen = document.getElementById('instrument-screen');
+      screen.style.backgroundColor = `hsl(${hue}, 70%, ${lightness}%)`;
+
+      const noteDisplay = document.getElementById('note-display');
+      noteDisplay.textContent = note;
+      noteDisplay.style.textShadow = `0 0 ${10 + velocity * 30}px currentColor`;
+
+      document.getElementById('volume-bar-fill').style.width = `${velocity * 100}%`;
+    }
+  </script>
+</body>
+</html>

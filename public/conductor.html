@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Теневой оркестр — Пульт дирижёра</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Courier New', monospace;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #111;
+    color: #fff;
+    overflow-y: auto;
+  }
+
+  #panel {
+    width: 400px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  h1 {
+    font-size: 18px;
+    letter-spacing: 3px;
+    text-align: center;
+    opacity: 0.9;
+  }
+
+  /* ── Счётчик игроков ─────────────────────────── */
+  #counter-block {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+  }
+
+  #counter-value {
+    font-size: 48px;
+    font-weight: bold;
+    color: #555; /* по умолчанию — 0 игроков */
+    transition: color 0.3s ease;
+  }
+
+  #counter-label {
+    font-size: 12px;
+    opacity: 0.7;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* ── Общий вид блока ─────────────────────────── */
+  .block {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: 16px;
+    border-left: 3px solid #555;
+  }
+
+  .block-label {
+    font-size: 12px;
+    opacity: 0.7;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  #tempo-block { border-left-color: #4ecdc4; }
+  #key-block   { border-left-color: #a29bfe; }
+  #mode-block  { border-left-color: #ffe66d; }
+  #show-block  { border-left-color: #555; }
+
+  /* ── Темп ─────────────────────────────────────── */
+  .tempo-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    accent-color: #4ecdc4;
+    cursor: pointer;
+  }
+
+  #bpm-value {
+    min-width: 80px;
+    text-align: right;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  /* ── Тональность и гамма ─────────────────────── */
+  .key-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  select {
+    flex: 1;
+    background: #111;
+    color: #fff;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 8px;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+  }
+
+  /* ── Режимы ───────────────────────────────────── */
+  .mode-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 12px 6px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    text-align: center;
+  }
+
+  .mode-btn:hover {
+    opacity: 0.85;
+  }
+
+  .mode-btn.active {
+    opacity: 1;
+    border-color: currentColor;
+    background: rgba(255,255,255,0.1);
+  }
+
+  #mode-ambient { color: #a29bfe; }
+  #mode-beat    { color: #4ecdc4; }
+  #mode-chaos   { color: #ff6b6b; }
+
+  /* ── Шоу-контроль ─────────────────────────────── */
+  #countdown-btn {
+    width: 100%;
+    padding: 16px;
+    background: #333;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+  }
+
+  #countdown-btn:hover:not(:disabled) {
+    background: #444;
+  }
+
+  #countdown-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  /* ── Оверлей обратного отсчёта ────────────────── */
+  #countdown-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  #countdown-overlay-value {
+    font-size: 200px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 0 0 60px rgba(255,255,255,0.6);
+  }
+</style>
+</head>
+<body>
+
+  <div id="panel">
+    <h1>🎭 ПУЛЬТ ДИРИЖЁРА</h1>
+
+    <!-- Счётчик игроков -->
+    <div id="counter-block">
+      <div id="counter-value">0</div>
+      <div id="counter-label">игроков подключено</div>
+    </div>
+
+    <!-- Темп -->
+    <div class="block" id="tempo-block">
+      <div class="block-label">Темп</div>
+      <div class="tempo-row">
+        <input type="range" id="bpm-slider" min="40" max="200" value="120" step="1">
+        <span id="bpm-value">120 BPM</span>
+      </div>
+    </div>
+
+    <!-- Тональность и гамма -->
+    <div class="block" id="key-block">
+      <div class="block-label">Тональность</div>
+      <div class="key-row">
+        <select id="key-select">
+          <option value="C" selected>C</option>
+          <option value="D">D</option>
+          <option value="E">E</option>
+          <option value="F">F</option>
+          <option value="G">G</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+        </select>
+        <select id="scale-select">
+          <option value="major">major</option>
+          <option value="minor" selected>minor</option>
+          <option value="pentatonic">pentatonic</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Режимы -->
+    <div class="block" id="mode-block">
+      <div class="block-label">Режим</div>
+      <div class="mode-row">
+        <button class="mode-btn active" id="mode-ambient" data-mode="ambient">🌊<br>Ambient</button>
+        <button class="mode-btn" id="mode-beat" data-mode="beat">🥁<br>Beat</button>
+        <button class="mode-btn" id="mode-chaos" data-mode="chaos">🔥<br>Chaos</button>
+      </div>
+    </div>
+
+    <!-- Шоу-контроль -->
+    <div class="block" id="show-block">
+      <div class="block-label">Шоу</div>
+      <button id="countdown-btn">⏱ ОБРАТНЫЙ ОТСЧЁТ</button>
+    </div>
+  </div>
+
+  <!-- Оверлей крупной цифры отсчёта -->
+  <div id="countdown-overlay">
+    <div id="countdown-overlay-value"></div>
+  </div>
+
+  <!-- CDN: Socket.IO (раздаётся сервером) -->
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+    // ═══════════════════════════════════════════════════
+    // Socket.IO
+    // ═══════════════════════════════════════════════════
+    const socket = io();
+
+    // Обновление счётчика игроков
+    socket.on('orchestra-update', (data) => {
+      const value = data.activePlayers ?? 0;
+      const counterEl = document.getElementById('counter-value');
+      counterEl.textContent = value;
+      counterEl.style.color = value > 0 ? '#4ecdc4' : '#555';
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Темп
+    // ═══════════════════════════════════════════════════
+    const bpmSlider = document.getElementById('bpm-slider');
+    const bpmValueEl = document.getElementById('bpm-value');
+
+    bpmSlider.addEventListener('input', () => {
+      const bpm = Number(bpmSlider.value);
+      bpmValueEl.textContent = `${bpm} BPM`;
+      socket.emit('conductor-command', { bpm });
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Тональность и гамма
+    // ═══════════════════════════════════════════════════
+    const keySelect = document.getElementById('key-select');
+    const scaleSelect = document.getElementById('scale-select');
+
+    keySelect.addEventListener('change', () => {
+      socket.emit('conductor-command', { key: keySelect.value });
+    });
+
+    scaleSelect.addEventListener('change', () => {
+      socket.emit('conductor-command', { scale: scaleSelect.value });
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Режимы
+    // ═══════════════════════════════════════════════════
+    const modeButtons = document.querySelectorAll('.mode-btn');
+
+    modeButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        // Локальное переключение активной кнопки —
+        // пульт не подписан на orchestra-settings, поэтому
+        // не ждём подтверждения от сервера
+        modeButtons.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        socket.emit('conductor-command', { mode: btn.dataset.mode });
+      });
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Обратный отсчёт
+    // ═══════════════════════════════════════════════════
+    const countdownBtn = document.getElementById('countdown-btn');
+    const countdownOverlay = document.getElementById('countdown-overlay');
+    const countdownOverlayValue = document.getElementById('countdown-overlay-value');
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function runCountdown() {
+      countdownBtn.disabled = true;
+      const sequence = ['5', '4', '3', '2', '1', '🎵'];
+
+      countdownOverlay.style.display = 'flex';
+
+      for (const value of sequence) {
+        console.log(value);
+        countdownOverlayValue.textContent = value;
+        await sleep(1000);
+      }
+
+      countdownOverlay.style.display = 'none';
+      countdownBtn.disabled = false;
+    }
+
+    countdownBtn.addEventListener('click', runCountdown);
+  </script>
+</body>
+</html>
