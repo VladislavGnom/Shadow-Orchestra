@@ -24,18 +24,70 @@
   // Цвета ролей ремикса — та же палитра, что в player.html/conductor.html
   const REMIX_ROLE_HUE = { filter: 200, reverb: 280, delay: 320, pitch: 40, distortion: 0 };
 
+  // Диапазоны реальных значений effect-change для каждой remix-роли (см. player.html,
+  // handleRemixMotion) — нужны, чтобы превратить "сырое" value в activity 0..1 для
+  // размера точки/частиц/колец, точно так же, как раньше это делала velocity.
+  const REMIX_VALUE_RANGE = {
+    filter: [200, 8000],   // Hz
+    reverb: [0, 1],        // roomSize
+    delay: [0, 0.8],       // feedback
+    pitch: [-12, 12],      // полутоны — 0 полутонов даёт activity 0.5, это ок:
+                            // "по центру" — не значит "молчит", просто нейтрально
+    distortion: [0, 1]     // amount
+  };
+
+  function normalizeRemixValue(role, value) {
+    const range = REMIX_VALUE_RANGE[role];
+    if (!range) return 0;
+    const [lo, hi] = range;
+    return constrain((value - lo) / (hi - lo), 0, 1);
+  }
+
+  // ═══════════════════════════════════════════════════
+  // ИСПРАВЛЕНИЕ БАГА: раньше drawOrbits проверял только player.note === null,
+  // из-за чего remix-игроки (у которых note всегда null, они управляют не нотами,
+  // а параметрами эффекта через value) полностью пропадали из визуализации — их
+  // не рисовали ни как орбиты (note === null → return), ни как что-то ещё
+  // (playMode === 'remix' раньше вообще не проверялся на уровне отдельного
+  // инструмента, только глобально).
+  //
+  // getPlayerVisual() — единая точка входа: по инструменту отдаёт { hue, activity }
+  // независимо от того, synth это или remix, либо null, если инструмент ещё не
+  // прислал ни одного значения (нота/эффект). Дальше вся орбитально-частичная
+  // система (drawOrbits/drawPlayerDot/drawRings/spawnParticle) работает только
+  // с этой парой и знать не знает про роли/note/value.
+  // ═══════════════════════════════════════════════════
+  function getPlayerVisual(player) {
+    if (!player) return null;
+
+    if (player.playMode === 'remix') {
+      if (player.value === null || player.value === undefined) return null; // ещё не крутил телефон
+      return {
+        hue: REMIX_ROLE_HUE[player.role] ?? 200,
+        activity: normalizeRemixValue(player.role, player.value)
+      };
+    }
+
+    // synth (или неизвестный playMode — считаем synth для обратной совместимости)
+    if (player.note === null || player.note === undefined) return null;
+    return {
+      hue: ROLE_HUE[player.role] ?? 0,
+      activity: player.velocity ?? 0
+    };
+  }
+
   // ═══════════════════════════════════════════════════
   // Состояние, приходящее с сервера
   // ═══════════════════════════════════════════════════
   let instruments = {};
   let bpm = 120;
   let mode = 'ambient';       // ambient | beat | chaos — визуальный режим
-  let playMode = 'synth';     // synth | remix — НОВОЕ: что вообще рисуем
+  let playMode = 'synth';     // synth | remix — глобальный режим исполнения (для фона-спектра)
 
   let latestSpectrumBins = new Array(32).fill(0);
 
   // ═══════════════════════════════════════════════════
-  // Локальное состояние визуализации (playMode = synth)
+  // Локальное состояние визуализации
   // ═══════════════════════════════════════════════════
   let waveOffset = 0;
   let particles = [];
@@ -87,18 +139,20 @@
 
     drawMetronome();
 
+    // Спектр трека — фон, показывается только пока идёт Ремикс (данные приходят
+    // от хоста, только когда там реально играет Tone.Player). Рисуется ПОД
+    // орбитами игроков, а не вместо них — см. фикс выше.
     if (playMode === 'remix') {
-      const hue = getDominantEffectHue();
-      drawSpectrum(latestSpectrumBins, hue);
-    } else {
-      const playerIds = Object.keys(instruments);
-      if (playerIds.length === 0) {
-        drawIdleState();
-      } else {
-        drawOrbits(playerIds);
-      }
-      updateAndDrawParticles();
+      drawSpectrum(latestSpectrumBins, getDominantEffectHue());
     }
+
+    const playerIds = Object.keys(instruments);
+    if (playerIds.length === 0) {
+      drawIdleState();
+    } else {
+      drawOrbits(playerIds);
+    }
+    updateAndDrawParticles();
 
     if (isChaos) {
       pop();
@@ -118,11 +172,11 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // REMIX: спектр-анализатор
+  // REMIX: фоновый спектр-анализатор трека
   // ═══════════════════════════════════════════════════
 
   /**
-   * Средний "цвет" сцены — векторное усреднение HUE активных эффектов
+   * Средний "цвет" сцены — векторное усреднение HUE активных remix-эффектов
    * (векторное, чтобы избежать некорректного усреднения через 0°/360°).
    * Возвращает 200 (голубой) по умолчанию, если ремикс-игроков ещё нет.
    */
@@ -167,7 +221,7 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // SYNTH: пустой оркестр — система жива и ждёт
+  // Пустой оркестр — система жива и ждёт (общий для обоих playMode)
   // ═══════════════════════════════════════════════════
   function drawIdleState() {
     const pulse = sin(frameCount * 0.03);
@@ -177,7 +231,10 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // SYNTH: орбиты игроков
+  // Орбиты игроков — работает и для synth (note/velocity), и для remix
+  // (value), через единый getPlayerVisual(). Инструмент без активности
+  // (ещё не прислал ни ноты, ни effect-change) просто пропускается —
+  // не рисуется вообще, как и раньше для synth.
   // ═══════════════════════════════════════════════════
   function drawOrbits(playerIds) {
     const total = playerIds.length;
@@ -185,26 +242,26 @@
 
     playerIds.forEach((id, index) => {
       const player = instruments[id];
-      if (!player || player.note === null) return;
+      const visual = getPlayerVisual(player);
+      if (!visual) return;
 
       const angle = (index / total) * TWO_PI + waveOffset;
       const x = width / 2 + cos(angle) * orbitRadius;
       const y = height / 2 + sin(angle) * orbitRadius;
 
-      drawPlayerDot(x, y, player);
+      drawPlayerDot(x, y, visual.hue, visual.activity);
 
-      if (player.velocity > 0.3 && frameCount % 3 === 0) {
-        spawnParticle(x, y, player.role);
+      if (visual.activity > 0.3 && frameCount % 3 === 0) {
+        spawnParticle(x, y, visual.hue);
       }
-      if (player.velocity > 0.5) {
-        drawRings(x, y, player.role);
+      if (visual.activity > 0.5) {
+        drawRings(x, y, visual.hue);
       }
     });
   }
 
-  function drawPlayerDot(x, y, player) {
-    const hue = ROLE_HUE[player.role] ?? 0;
-    const size = 20 + player.velocity * 80;
+  function drawPlayerDot(x, y, hue, activity) {
+    const size = 20 + activity * 80;
 
     fill(hue, 60, 100, 8);
     ellipse(x, y, size * 2, size * 2);
@@ -216,8 +273,7 @@
     ellipse(x, y, size, size);
   }
 
-  function drawRings(x, y, role) {
-    const hue = ROLE_HUE[role] ?? 0;
+  function drawRings(x, y, hue) {
     noFill();
     strokeWeight(1);
     for (let ringIndex = 0; ringIndex < 3; ringIndex++) {
@@ -228,14 +284,14 @@
     noStroke();
   }
 
-  function spawnParticle(x, y, role) {
+  function spawnParticle(x, y, hue) {
     if (particles.length >= MAX_PARTICLES) return;
     particles.push({
       x, y,
       vx: random(-3, 3),
       vy: random(-3, 3),
       life: 255,
-      hue: ROLE_HUE[role] ?? 0,
+      hue,
       size: random(2, 8)
     });
   }
@@ -260,4 +316,3 @@
 </script>
 </body>
 </html>
-  

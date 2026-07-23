@@ -126,7 +126,7 @@
       </div>
     </div>
 
-    <!-- НОВОЕ: переключатель Синтезатор / Ремикс (поле playMode, НЕ mode) -->
+    <!-- Переключатель Синтезатор / Ремикс (поле playMode, НЕ mode) -->
     <div class="block" id="playmode-block">
       <div class="block-label">Режим исполнения</div>
       <div class="mode-row">
@@ -135,7 +135,7 @@
       </div>
     </div>
 
-    <!-- НОВОЕ: секция ремикса — видна только при playMode = remix -->
+    <!-- Секция ремикса — видна только при playMode = remix -->
     <div class="block" id="remix-block">
       <div class="block-label">Трек</div>
       <input type="file" id="track-file" accept="audio/*">
@@ -274,6 +274,10 @@
         formData.append('track', trackFileInput.files[0]);
         trackStatusEl.textContent = 'Загружаю файл...';
 
+        // ИЗМЕНЕНО: сервер теперь пишет файл на диск потоково (multer.diskStorage)
+        // и отвечает мгновенно с { ok, url } — никакого base64 в ответе.
+        // Сам плеер поднимается по событию 'track-loaded' ниже (сервер
+        // рассылает его всем клиентам после успешной записи на диск).
         try {
           const res = await fetch('/upload-track', { method: 'POST', body: formData });
           const data = await res.json();
@@ -330,14 +334,18 @@
       return { pitch, distortion, delay, reverb, filter, input: pitch };
     }
 
-    socket.on('track-loaded', ({ name, dataUrl }) => {
+    // ИЗМЕНЕНО: сервер теперь шлёт { name, url } вместо { name, dataUrl }.
+    // url — короткий относительный путь вида /tracks/169...-song.mp3, который
+    // отдаёт express.static('public'); Tone.Player грузит его обычным HTTP GET,
+    // без base64 и без прохождения через WebSocket.
+    socket.on('track-loaded', ({ name, url }) => {
       trackStatusEl.textContent = 'Загружаю трек: ' + name;
 
       disposeHostAudio();
       hostChain = buildEffectChain();
 
       hostPlayer = new Tone.Player({
-        url: dataUrl,
+        url,
         onload: () => {
           document.getElementById('track-status').textContent = 'Играет: ' + name;
           hostPlayer.sync().start(0);

@@ -14,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
-  maxHttpBufferSize: 1e8 // на случай, если где-то решат слать бинарные данные через сокет
+  maxHttpBufferSize: 1e8 // спектр/служебные сообщения — маленькие, но оставляем запас
 });
 
 const PORT = 3000;
@@ -35,7 +35,7 @@ const orchestra = {
   key: 'C',
   scale: 'minor',
   mode: 'ambient',      // ambient | beat | chaos — визуальный/сценический режим (существовал раньше)
-  playMode: 'synth',    // synth | remix — НОВОЕ: инструменты vs пульт эффектов
+  playMode: 'synth',    // synth | remix — инструменты vs пульт эффектов
   totalPlayers: 0,      // счётчик для назначения ролей — только растёт
   instruments: {}       // socket.id -> { role, playMode, joinIndex, note, velocity, value, lastUpdate }
 };
@@ -262,22 +262,20 @@ io.on('connection', (socket) => {
   });
 
   // ── load-preloaded-track: хост просит поднять трек из public/tracks/ ──
+  // Файл уже лежит на диске (загруженный через /upload-track, либо предзагруженный
+  // вручную) — просто отдаём его URL, ничего не читаем в память целиком.
   socket.on('load-preloaded-track', ({ filename }) => {
     if (socket.clientType !== 'conductor') return;
 
     const safeName = path.basename(String(filename || '')); // защита от path traversal
-    const filePath = path.join(__dirname, 'public', 'tracks', safeName);
+    const filePath = path.join(TRACKS_DIR, safeName);
 
-    fs.readFile(filePath, (err, buffer) => {
+    fs.access(filePath, fs.constants.R_OK, (err) => {
       if (err) {
         socket.emit('track-load-error', { message: `Не удалось загрузить трек: ${safeName}` });
         return;
       }
-      const ext = path.extname(safeName).slice(1).toLowerCase();
-      const mimeMap = { mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4' };
-      const mimeType = mimeMap[ext] || 'audio/mpeg';
-      const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
-      io.emit('track-loaded', { name: safeName, dataUrl });
+      io.emit('track-loaded', { name: safeName, url: `/tracks/${safeName}` });
     });
   });
 
@@ -306,11 +304,43 @@ setInterval(() => {
 }, 33);
 
 // ───────────────────────────────────────────────
-// Загрузка треков (multer, memoryStorage → base64 → broadcast)
+// Загрузка треков: multer → диск (public/tracks/) → URL.
+//
+// ИЗМЕНЕНО: раньше файл шёл в memoryStorage → base64 → io.emit всем клиентам
+// через WebSocket. Трек 3-4 МБ в base64 ≈ 5 МБ текста — на телефоне POST-запрос
+// обрывался по таймауту ("Request aborted") ещё до того, как multer успевал
+// его дочитать. Теперь multer сразу пишет поток на диск (без буферизации в
+// памяти), сервер отвечает мгновенно, а клиенты получают короткий URL и грузят
+// аудио через обычный HTTP GET (его отдаёт express.static('public') — папка
+// tracks/ уже статическая).
 // ───────────────────────────────────────────────
+const TRACKS_DIR = path.join(__dirname, 'public', 'tracks');
+if (!fs.existsSync(TRACKS_DIR)) {
+  fs.mkdirSync(TRACKS_DIR, { recursive: true });
+}
+
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.m4a'];
+
+const trackStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, TRACKS_DIR),
+  filename: (req, file, cb) => {
+    // Убираем всё, что не буквы/цифры/точка/дефис/подчёркивание, и добавляем
+    // временную метку спереди, чтобы не затирать одноимённые файлы разных загрузок.
+    const safeOriginal = path.basename(file.originalname).replace(/[^a-zA-Z0-9.\-_]/g, '_');
+    cb(null, `${Date.now()}-${safeOriginal}`);
+  }
+});
+
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 } // 20 МБ — этого хватает на 2-3 минуты mp3 в приличном качестве
+  storage: trackStorage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 МБ — этого хватает на 2-3 минуты mp3 в приличном качестве
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      return cb(new Error('Неподдерживаемый формат файла: ' + ext));
+    }
+    cb(null, true);
+  }
 });
 
 // Загрузка обёрнута вручную (не как обычный middleware в цепочке app.post),
@@ -334,19 +364,17 @@ app.post('/upload-track', (req, res) => {
       return res.status(400).json({ error: 'Файл не получен (поле формы должно называться "track")' });
     }
 
-    const mimeType = req.file.mimetype || 'audio/mpeg';
-    const dataUrl = `data:${mimeType};base64,${req.file.buffer.toString('base64')}`;
+    const url = `/tracks/${req.file.filename}`;
 
-    io.emit('track-loaded', { name: req.file.originalname, dataUrl });
+    res.json({ ok: true, name: req.file.originalname, url });
 
-    res.json({ ok: true, name: req.file.originalname });
+    io.emit('track-loaded', { name: req.file.originalname, url });
   });
 });
 
 // GET /api/tracks — список предзагруженных треков из public/tracks/
 app.get('/api/tracks', (req, res) => {
-  const tracksDir = path.join(__dirname, 'public', 'tracks');
-  fs.readdir(tracksDir, (err, files) => {
+  fs.readdir(TRACKS_DIR, (err, files) => {
     if (err) {
       return res.json({ tracks: [] });
     }
