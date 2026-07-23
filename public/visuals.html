@@ -6,37 +6,36 @@
 <title>Теневой оркестр — Визуализация</title>
 <style>
   * { margin: 0; padding: 0; }
-  html, body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: #000;
-  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
   canvas { display: block; }
 </style>
 </head>
 <body>
 
-<!-- CDN: Socket.IO (раздаётся сервером) -->
 <script src="/socket.io/socket.io.js"></script>
-<!-- CDN: p5.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 
 <script>
   // ═══════════════════════════════════════════════════
-  // Цвета ролей (HUE в модели HSB)
+  // Цвета ролей синтезатора (HUE в HSB)
   // ═══════════════════════════════════════════════════
   const ROLE_HUE = { bass: 0, pad: 180, lead: 50, arp: 260, fx: 330 };
+
+  // Цвета ролей ремикса — та же палитра, что в player.html/conductor.html
+  const REMIX_ROLE_HUE = { filter: 200, reverb: 280, delay: 320, pitch: 40, distortion: 0 };
 
   // ═══════════════════════════════════════════════════
   // Состояние, приходящее с сервера
   // ═══════════════════════════════════════════════════
-  let instruments = {};   // { socketId: { role, note, velocity, lastUpdate } }
+  let instruments = {};
   let bpm = 120;
-  let mode = 'ambient';
+  let mode = 'ambient';       // ambient | beat | chaos — визуальный режим
+  let playMode = 'synth';     // synth | remix — НОВОЕ: что вообще рисуем
+
+  let latestSpectrumBins = new Array(32).fill(0);
 
   // ═══════════════════════════════════════════════════
-  // Локальное состояние визуализации
+  // Локальное состояние визуализации (playMode = synth)
   // ═══════════════════════════════════════════════════
   let waveOffset = 0;
   let particles = [];
@@ -47,10 +46,20 @@
   // ═══════════════════════════════════════════════════
   const socket = io();
 
+  socket.on('connect', () => {
+    socket.emit('register', { type: 'visuals' });
+  });
+
   socket.on('visualization-data', (data) => {
     instruments = data.instruments || {};
     bpm = data.bpm || bpm;
     mode = data.mode || mode;
+    playMode = data.playMode || playMode;
+  });
+
+  // Приходит только пока хост (conductor.html) реально играет трек в remix-режиме
+  socket.on('spectrum-data', ({ bins }) => {
+    if (Array.isArray(bins)) latestSpectrumBins = bins;
   });
 
   // ═══════════════════════════════════════════════════
@@ -67,15 +76,9 @@
   }
 
   function draw() {
-    // Длинный хвост затухания вместо полной очистки
     background(0, 0, 0, 15);
-
-    // waveOffset вращается тем быстрее, чем выше BPM
     waveOffset += 0.01 * (bpm / 120);
 
-    const playerIds = Object.keys(instruments);
-
-    // Режим chaos: дрожание всей сцены
     const isChaos = mode === 'chaos';
     if (isChaos) {
       push();
@@ -84,13 +87,18 @@
 
     drawMetronome();
 
-    if (playerIds.length === 0) {
-      drawIdleState();
+    if (playMode === 'remix') {
+      const hue = getDominantEffectHue();
+      drawSpectrum(latestSpectrumBins, hue);
     } else {
-      drawOrbits(playerIds);
+      const playerIds = Object.keys(instruments);
+      if (playerIds.length === 0) {
+        drawIdleState();
+      } else {
+        drawOrbits(playerIds);
+      }
+      updateAndDrawParticles();
     }
-
-    updateAndDrawParticles();
 
     if (isChaos) {
       pop();
@@ -98,10 +106,10 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // Пульсирующий круг-метроном в центре
+  // Метроном — рисуется в обоих playMode
   // ═══════════════════════════════════════════════════
   function drawMetronome() {
-    const beatPhase = (frameCount * (bpm / 60) / 60); // доля бита за кадр (60 fps допущение)
+    const beatPhase = (frameCount * (bpm / 60) / 60); // допущение: 60 fps
     const pulse = sin(beatPhase * TWO_PI);
     const size = 100 + pulse * 50;
 
@@ -110,7 +118,56 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // Пустой оркестр — система жива и ждёт
+  // REMIX: спектр-анализатор
+  // ═══════════════════════════════════════════════════
+
+  /**
+   * Средний "цвет" сцены — векторное усреднение HUE активных эффектов
+   * (векторное, чтобы избежать некорректного усреднения через 0°/360°).
+   * Возвращает 200 (голубой) по умолчанию, если ремикс-игроков ещё нет.
+   */
+  function getDominantEffectHue() {
+    let sumX = 0, sumY = 0, count = 0;
+
+    for (const id of Object.keys(instruments)) {
+      const inst = instruments[id];
+      if (!inst || inst.playMode !== 'remix' || inst.value === null || inst.value === undefined) continue;
+
+      const hue = REMIX_ROLE_HUE[inst.role] ?? 200;
+      const rad = hue * (Math.PI / 180);
+      sumX += cos(rad);
+      sumY += sin(rad);
+      count++;
+    }
+
+    if (count === 0) return 200;
+
+    let angle = atan2(sumY, sumX) * (180 / Math.PI);
+    if (angle < 0) angle += 360;
+    return angle;
+  }
+
+  function drawSpectrum(bins, hue) {
+    if (!bins || bins.length === 0) return;
+
+    const barCount = bins.length;
+    const barWidth = width / barCount;
+
+    for (let i = 0; i < barCount; i++) {
+      const value = constrain(bins[i] / 255, 0, 1);
+      const barHeight = value * height * 0.6;
+
+      fill(hue, 70, 50 + value * 45, 75);
+      rect(i * barWidth, height - barHeight, barWidth * 0.8, barHeight);
+
+      // Лёгкое зеркальное отражение сверху для симметрии сцены
+      fill(hue, 70, 50 + value * 45, 25);
+      rect(i * barWidth, 0, barWidth * 0.8, barHeight * 0.3);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════
+  // SYNTH: пустой оркестр — система жива и ждёт
   // ═══════════════════════════════════════════════════
   function drawIdleState() {
     const pulse = sin(frameCount * 0.03);
@@ -120,7 +177,7 @@
   }
 
   // ═══════════════════════════════════════════════════
-  // Орбиты игроков
+  // SYNTH: орбиты игроков
   // ═══════════════════════════════════════════════════
   function drawOrbits(playerIds) {
     const total = playerIds.length;
@@ -128,7 +185,7 @@
 
     playerIds.forEach((id, index) => {
       const player = instruments[id];
-      if (!player || player.note === null) return; // нет ноты — не рисуем
+      if (!player || player.note === null) return;
 
       const angle = (index / total) * TWO_PI + waveOffset;
       const x = width / 2 + cos(angle) * orbitRadius;
@@ -139,41 +196,28 @@
       if (player.velocity > 0.3 && frameCount % 3 === 0) {
         spawnParticle(x, y, player.role);
       }
-
       if (player.velocity > 0.5) {
         drawRings(x, y, player.role);
       }
     });
   }
 
-  // ═══════════════════════════════════════════════════
-  // Точка игрока со свечением
-  // ═══════════════════════════════════════════════════
   function drawPlayerDot(x, y, player) {
     const hue = ROLE_HUE[player.role] ?? 0;
     const size = 20 + player.velocity * 80;
 
-    // Свечение: 3 слоя, каждый больше и прозрачнее
     fill(hue, 60, 100, 8);
     ellipse(x, y, size * 2, size * 2);
-
     fill(hue, 60, 100, 6);
     ellipse(x, y, size * 3, size * 3);
-
     fill(hue, 60, 100, 5);
     ellipse(x, y, size * 4, size * 4);
-
-    // Ядро
     fill(hue, 60, 100, 80);
     ellipse(x, y, size, size);
   }
 
-  // ═══════════════════════════════════════════════════
-  // Круговые волны при высокой velocity
-  // ═══════════════════════════════════════════════════
   function drawRings(x, y, role) {
     const hue = ROLE_HUE[role] ?? 0;
-
     noFill();
     strokeWeight(1);
     for (let ringIndex = 0; ringIndex < 3; ringIndex++) {
@@ -181,18 +225,13 @@
       stroke(hue, 60, 80, 30 - ringIndex * 10);
       ellipse(x, y, radius * 2, radius * 2);
     }
-    noStroke(); // возвращаем состояние по умолчанию
+    noStroke();
   }
 
-  // ═══════════════════════════════════════════════════
-  // Частицы
-  // ═══════════════════════════════════════════════════
   function spawnParticle(x, y, role) {
-    if (particles.length >= MAX_PARTICLES) return; // не создаём при переполнении
-
+    if (particles.length >= MAX_PARTICLES) return;
     particles.push({
-      x: x,
-      y: y,
+      x, y,
       vx: random(-3, 3),
       vy: random(-3, 3),
       life: 255,
@@ -202,22 +241,18 @@
   }
 
   function updateAndDrawParticles() {
-    // На всякий случай жёстко ограничиваем размер массива снизу по возрасту
     if (particles.length > MAX_PARTICLES) {
       particles.splice(0, particles.length - MAX_PARTICLES);
     }
-
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.x += p.vx;
       p.y += p.vy;
       p.life -= 3;
-
       if (p.life <= 0) {
         particles.splice(i, 1);
         continue;
       }
-
       fill(p.hue, 50, 100, (p.life / 255) * 80);
       ellipse(p.x, p.y, p.size, p.size);
     }
@@ -225,3 +260,4 @@
 </script>
 </body>
 </html>
+  

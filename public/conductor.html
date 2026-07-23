@@ -5,196 +5,83 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Теневой оркестр — Пульт дирижёра</title>
 <style>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    font-family: 'Courier New', monospace;
-  }
+  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Courier New', monospace; }
 
-  html, body {
-    width: 100%;
-    height: 100%;
-    background: #111;
-    color: #fff;
-    overflow-y: auto;
-  }
+  html, body { width: 100%; height: 100%; background: #111; color: #fff; overflow-y: auto; }
 
-  #panel {
-    width: 400px;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 20px;
-  }
+  #panel { width: 420px; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
 
-  h1 {
-    font-size: 18px;
-    letter-spacing: 3px;
-    text-align: center;
-    opacity: 0.9;
-  }
+  h1 { font-size: 18px; letter-spacing: 3px; text-align: center; opacity: 0.9; }
 
-  /* ── Счётчик игроков ─────────────────────────── */
-  #counter-block {
-    background: #1a1a1a;
-    border-radius: 10px;
-    padding: 20px;
-    text-align: center;
-  }
+  #counter-block { background: #1a1a1a; border-radius: 10px; padding: 20px; text-align: center; }
+  #counter-value { font-size: 48px; font-weight: bold; color: #555; transition: color 0.3s ease; }
+  #counter-label { font-size: 12px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; }
 
-  #counter-value {
-    font-size: 48px;
-    font-weight: bold;
-    color: #555; /* по умолчанию — 0 игроков */
-    transition: color 0.3s ease;
-  }
-
-  #counter-label {
-    font-size: 12px;
-    opacity: 0.7;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-top: 4px;
-  }
-
-  /* ── Общий вид блока ─────────────────────────── */
-  .block {
-    background: #1a1a1a;
-    border-radius: 10px;
-    padding: 16px;
-    border-left: 3px solid #555;
-  }
-
-  .block-label {
-    font-size: 12px;
-    opacity: 0.7;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    margin-bottom: 10px;
-  }
+  .block { background: #1a1a1a; border-radius: 10px; padding: 16px; border-left: 3px solid #555; }
+  .block-label { font-size: 12px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
 
   #tempo-block { border-left-color: #4ecdc4; }
   #key-block   { border-left-color: #a29bfe; }
   #mode-block  { border-left-color: #ffe66d; }
+  #playmode-block { border-left-color: #fd79a8; }
+  #remix-block { border-left-color: #fd79a8; display: none; flex-direction: column; gap: 10px; }
   #show-block  { border-left-color: #555; }
 
-  /* ── Темп ─────────────────────────────────────── */
-  .tempo-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
+  .tempo-row { display: flex; align-items: center; gap: 12px; }
+  input[type="range"] { flex: 1; accent-color: #4ecdc4; cursor: pointer; }
+  #bpm-value { min-width: 80px; text-align: right; font-size: 14px; white-space: nowrap; }
+
+  .key-row { display: flex; gap: 10px; }
+  select, input[type="file"] {
+    flex: 1; background: #111; color: #fff; border: 1px solid #333; border-radius: 6px;
+    padding: 8px; font-family: 'Courier New', monospace; cursor: pointer; font-size: 12px;
   }
 
-  input[type="range"] {
-    flex: 1;
-    accent-color: #4ecdc4;
-    cursor: pointer;
-  }
-
-  #bpm-value {
-    min-width: 80px;
-    text-align: right;
-    font-size: 14px;
-    white-space: nowrap;
-  }
-
-  /* ── Тональность и гамма ─────────────────────── */
-  .key-row {
-    display: flex;
-    gap: 10px;
-  }
-
-  select {
-    flex: 1;
-    background: #111;
-    color: #fff;
-    border: 1px solid #333;
-    border-radius: 6px;
-    padding: 8px;
-    font-family: 'Courier New', monospace;
-    cursor: pointer;
-  }
-
-  /* ── Режимы ───────────────────────────────────── */
-  .mode-row {
-    display: flex;
-    gap: 8px;
-  }
-
-  .mode-btn {
-    flex: 1;
-    padding: 12px 6px;
-    border-radius: 8px;
-    border: 2px solid transparent;
-    background: rgba(255,255,255,0.05);
-    color: #fff;
-    font-family: 'Courier New', monospace;
-    font-size: 12px;
-    cursor: pointer;
-    opacity: 0.55;
-    transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  .mode-row { display: flex; gap: 8px; }
+  .mode-btn, .playmode-btn {
+    flex: 1; padding: 12px 6px; border-radius: 8px; border: 2px solid transparent;
+    background: rgba(255,255,255,0.05); color: #fff; font-family: 'Courier New', monospace;
+    font-size: 12px; cursor: pointer; opacity: 0.55; transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
     text-align: center;
   }
-
-  .mode-btn:hover {
-    opacity: 0.85;
-  }
-
-  .mode-btn.active {
-    opacity: 1;
-    border-color: currentColor;
-    background: rgba(255,255,255,0.1);
-  }
+  .mode-btn:hover, .playmode-btn:hover { opacity: 0.85; }
+  .mode-btn.active, .playmode-btn.active { opacity: 1; border-color: currentColor; background: rgba(255,255,255,0.1); }
 
   #mode-ambient { color: #a29bfe; }
   #mode-beat    { color: #4ecdc4; }
   #mode-chaos   { color: #ff6b6b; }
+  #playmode-synth { color: #4ecdc4; }
+  #playmode-remix { color: #fd79a8; }
 
-  /* ── Шоу-контроль ─────────────────────────────── */
+  #load-track-btn {
+    width: 100%; padding: 10px; background: #333; color: #fff; border: none; border-radius: 6px;
+    font-family: 'Courier New', monospace; font-size: 13px; letter-spacing: 1px; cursor: pointer;
+  }
+  #load-track-btn:hover { background: #444; }
+
+  #track-status { font-size: 12px; opacity: 0.75; min-height: 16px; }
+
+  .transport-row { display: flex; gap: 8px; }
+  .transport-row button {
+    flex: 1; padding: 10px; background: rgba(255,255,255,0.05); color: #fff;
+    border: 1px solid #333; border-radius: 6px; font-family: 'Courier New', monospace;
+    font-size: 13px; cursor: pointer;
+  }
+  .transport-row button:hover { background: rgba(255,255,255,0.12); }
+
   #countdown-btn {
-    width: 100%;
-    padding: 16px;
-    background: #333;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-family: 'Courier New', monospace;
-    font-size: 14px;
-    letter-spacing: 2px;
-    cursor: pointer;
+    width: 100%; padding: 16px; background: #333; color: #fff; border: none; border-radius: 8px;
+    font-family: 'Courier New', monospace; font-size: 14px; letter-spacing: 2px; cursor: pointer;
     transition: background 0.2s ease;
   }
+  #countdown-btn:hover:not(:disabled) { background: #444; }
+  #countdown-btn:disabled { opacity: 0.5; cursor: default; }
 
-  #countdown-btn:hover:not(:disabled) {
-    background: #444;
-  }
-
-  #countdown-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  /* ── Оверлей обратного отсчёта ────────────────── */
   #countdown-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    z-index: 999;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none;
+    align-items: center; justify-content: center; pointer-events: none; z-index: 999;
   }
-
-  #countdown-overlay-value {
-    font-size: 200px;
-    font-weight: bold;
-    color: #fff;
-    text-shadow: 0 0 60px rgba(255,255,255,0.6);
-  }
+  #countdown-overlay-value { font-size: 200px; font-weight: bold; color: #fff; text-shadow: 0 0 60px rgba(255,255,255,0.6); }
 </style>
 </head>
 <body>
@@ -202,13 +89,11 @@
   <div id="panel">
     <h1>🎭 ПУЛЬТ ДИРИЖЁРА</h1>
 
-    <!-- Счётчик игроков -->
     <div id="counter-block">
       <div id="counter-value">0</div>
       <div id="counter-label">игроков подключено</div>
     </div>
 
-    <!-- Темп -->
     <div class="block" id="tempo-block">
       <div class="block-label">Темп</div>
       <div class="tempo-row">
@@ -217,18 +102,12 @@
       </div>
     </div>
 
-    <!-- Тональность и гамма -->
     <div class="block" id="key-block">
       <div class="block-label">Тональность</div>
       <div class="key-row">
         <select id="key-select">
-          <option value="C" selected>C</option>
-          <option value="D">D</option>
-          <option value="E">E</option>
-          <option value="F">F</option>
-          <option value="G">G</option>
-          <option value="A">A</option>
-          <option value="B">B</option>
+          <option value="C" selected>C</option><option value="D">D</option><option value="E">E</option>
+          <option value="F">F</option><option value="G">G</option><option value="A">A</option><option value="B">B</option>
         </select>
         <select id="scale-select">
           <option value="major">major</option>
@@ -238,9 +117,8 @@
       </div>
     </div>
 
-    <!-- Режимы -->
     <div class="block" id="mode-block">
-      <div class="block-label">Режим</div>
+      <div class="block-label">Визуальный режим</div>
       <div class="mode-row">
         <button class="mode-btn active" id="mode-ambient" data-mode="ambient">🌊<br>Ambient</button>
         <button class="mode-btn" id="mode-beat" data-mode="beat">🥁<br>Beat</button>
@@ -248,20 +126,44 @@
       </div>
     </div>
 
-    <!-- Шоу-контроль -->
+    <!-- НОВОЕ: переключатель Синтезатор / Ремикс (поле playMode, НЕ mode) -->
+    <div class="block" id="playmode-block">
+      <div class="block-label">Режим исполнения</div>
+      <div class="mode-row">
+        <button class="playmode-btn active" id="playmode-synth" data-playmode="synth">🎹<br>Синтезатор</button>
+        <button class="playmode-btn" id="playmode-remix" data-playmode="remix">🎧<br>Ремикс</button>
+      </div>
+    </div>
+
+    <!-- НОВОЕ: секция ремикса — видна только при playMode = remix -->
+    <div class="block" id="remix-block">
+      <div class="block-label">Трек</div>
+      <input type="file" id="track-file" accept="audio/*">
+      <select id="preloaded-tracks">
+        <option value="">— выбрать из готовых —</option>
+      </select>
+      <button id="load-track-btn">Загрузить</button>
+      <div id="track-status">Трек не загружен</div>
+      <div class="transport-row">
+        <button id="play-btn">▶ Play</button>
+        <button id="pause-btn">⏸ Pause</button>
+        <button id="stop-btn">⏹ Stop</button>
+      </div>
+    </div>
+
     <div class="block" id="show-block">
       <div class="block-label">Шоу</div>
       <button id="countdown-btn">⏱ ОБРАТНЫЙ ОТСЧЁТ</button>
     </div>
   </div>
 
-  <!-- Оверлей крупной цифры отсчёта -->
   <div id="countdown-overlay">
     <div id="countdown-overlay-value"></div>
   </div>
 
-  <!-- CDN: Socket.IO (раздаётся сервером) -->
+  <!-- CDN -->
   <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 
   <script>
     // ═══════════════════════════════════════════════════
@@ -269,7 +171,10 @@
     // ═══════════════════════════════════════════════════
     const socket = io();
 
-    // Обновление счётчика игроков
+    socket.on('connect', () => {
+      socket.emit('register', { type: 'conductor' });
+    });
+
     socket.on('orchestra-update', (data) => {
       const value = data.activePlayers ?? 0;
       const counterEl = document.getElementById('counter-value');
@@ -277,12 +182,15 @@
       counterEl.style.color = value > 0 ? '#4ecdc4' : '#555';
     });
 
+    socket.on('track-load-error', ({ message }) => {
+      trackStatusEl.textContent = message;
+    });
+
     // ═══════════════════════════════════════════════════
     // Темп
     // ═══════════════════════════════════════════════════
     const bpmSlider = document.getElementById('bpm-slider');
     const bpmValueEl = document.getElementById('bpm-value');
-
     bpmSlider.addEventListener('input', () => {
       const bpm = Number(bpmSlider.value);
       bpmValueEl.textContent = `${bpm} BPM`;
@@ -294,30 +202,206 @@
     // ═══════════════════════════════════════════════════
     const keySelect = document.getElementById('key-select');
     const scaleSelect = document.getElementById('scale-select');
-
-    keySelect.addEventListener('change', () => {
-      socket.emit('conductor-command', { key: keySelect.value });
-    });
-
-    scaleSelect.addEventListener('change', () => {
-      socket.emit('conductor-command', { scale: scaleSelect.value });
-    });
+    keySelect.addEventListener('change', () => socket.emit('conductor-command', { key: keySelect.value }));
+    scaleSelect.addEventListener('change', () => socket.emit('conductor-command', { scale: scaleSelect.value }));
 
     // ═══════════════════════════════════════════════════
-    // Режимы
+    // Визуальный режим (ambient/beat/chaos) — поле mode
     // ═══════════════════════════════════════════════════
     const modeButtons = document.querySelectorAll('.mode-btn');
-
     modeButtons.forEach((btn) => {
       btn.addEventListener('click', () => {
-        // Локальное переключение активной кнопки —
-        // пульт не подписан на orchestra-settings, поэтому
-        // не ждём подтверждения от сервера
         modeButtons.forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
-
         socket.emit('conductor-command', { mode: btn.dataset.mode });
       });
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Режим исполнения (synth/remix) — поле playMode
+    // ═══════════════════════════════════════════════════
+    const playmodeButtons = document.querySelectorAll('.playmode-btn');
+    const remixBlock = document.getElementById('remix-block');
+
+    playmodeButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        playmodeButtons.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        const playMode = btn.dataset.playmode;
+        remixBlock.style.display = playMode === 'remix' ? 'flex' : 'none';
+
+        socket.emit('conductor-command', { playMode });
+
+        // При возврате в синтезатор — глушим трек на хосте
+        if (playMode === 'synth' && typeof Tone !== 'undefined' && Tone.Transport.state === 'started') {
+          Tone.Transport.pause();
+          trackStatusEl.textContent = 'Приостановлено (переключились в Синтезатор)';
+        }
+      });
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Ремикс: загрузка трека
+    // ═══════════════════════════════════════════════════
+    const trackFileInput = document.getElementById('track-file');
+    const preloadedSelect = document.getElementById('preloaded-tracks');
+    const loadTrackBtn = document.getElementById('load-track-btn');
+    const trackStatusEl = document.getElementById('track-status');
+    const playBtn = document.getElementById('play-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const stopBtn = document.getElementById('stop-btn');
+
+    // Подтягиваем список предзагруженных треков
+    fetch('/api/tracks')
+      .then((r) => r.json())
+      .then((data) => {
+        (data.tracks || []).forEach((name) => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          preloadedSelect.appendChild(opt);
+        });
+      })
+      .catch(() => { /* если список не загрузился — просто останется пустым */ });
+
+    loadTrackBtn.addEventListener('click', async () => {
+      // Разблокируем Web Audio на хосте по этому клику (нужно один раз за сессию)
+      await Tone.start();
+
+      if (trackFileInput.files[0]) {
+        const formData = new FormData();
+        formData.append('track', trackFileInput.files[0]);
+        trackStatusEl.textContent = 'Загружаю файл...';
+
+        try {
+          const res = await fetch('/upload-track', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (!data.ok) throw new Error(data.error || 'Ошибка загрузки');
+        } catch (err) {
+          trackStatusEl.textContent = 'Ошибка: ' + err.message;
+        }
+      } else if (preloadedSelect.value) {
+        trackStatusEl.textContent = 'Загружаю: ' + preloadedSelect.value;
+        socket.emit('load-preloaded-track', { filename: preloadedSelect.value });
+      } else {
+        alert('Выберите файл или трек из списка');
+      }
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Хост-плеер: Tone.Player → PitchShift → Distortion → FeedbackDelay → Reverb → Filter → Speakers
+    // ═══════════════════════════════════════════════════
+    let hostPlayer = null;
+    let hostChain = null;
+    let analyser = null;
+    let spectrumInterval = null;
+
+    function disposeHostAudio() {
+      if (spectrumInterval) { clearInterval(spectrumInterval); spectrumInterval = null; }
+      Tone.Transport.stop();
+      Tone.Transport.cancel();
+      if (hostPlayer) { hostPlayer.dispose(); hostPlayer = null; }
+      if (hostChain) {
+        Object.values(hostChain).forEach((node) => { if (node && node.dispose) node.dispose(); });
+        hostChain = null;
+      }
+      if (analyser) { analyser.dispose(); analyser = null; }
+    }
+
+    function buildEffectChain() {
+      // ПРИМЕЧАНИЕ: используем Tone.Freeverb вместо Tone.Reverb для узла "reverb".
+      // Tone.Reverb.decay нельзя плавно менять в реальном времени — смена decay
+      // требует асинхронной перегенерации импульсного отклика (generate()),
+      // что вызывает щелчки/лаги при непрерывном управлении гироскопом.
+      // Freeverb.roomSize — обычный Signal, меняется в реальном времени без глитчей.
+      const pitch = new Tone.PitchShift({ pitch: 0 });
+      const distortion = new Tone.Distortion({ distortion: 0 });
+      const delay = new Tone.FeedbackDelay({ delayTime: 0.25, feedback: 0 });
+      const reverb = new Tone.Freeverb({ roomSize: 0.3, dampening: 3000 });
+      const filter = new Tone.Filter({ frequency: 8000, type: 'lowpass' });
+
+      pitch.connect(distortion);
+      distortion.connect(delay);
+      delay.connect(reverb);
+      reverb.connect(filter);
+      filter.toDestination();
+
+      return { pitch, distortion, delay, reverb, filter, input: pitch };
+    }
+
+    socket.on('track-loaded', ({ name, dataUrl }) => {
+      trackStatusEl.textContent = 'Загружаю трек: ' + name;
+
+      disposeHostAudio();
+      hostChain = buildEffectChain();
+
+      hostPlayer = new Tone.Player({
+        url: dataUrl,
+        onload: () => {
+          document.getElementById('track-status').textContent = 'Играет: ' + name;
+          hostPlayer.sync().start(0);
+          Tone.Transport.start();
+
+          // Анализатор спектра для visuals.html (снимается после фильтра — конца цепочки)
+          analyser = new Tone.Analyser('fft', 32);
+          hostChain.filter.connect(analyser);
+
+          spectrumInterval = setInterval(() => {
+            if (!analyser) return;
+            const values = analyser.getValue(); // Float32Array, дБ, примерно -100..0
+            const bins = Array.from(values).map((v) => Math.max(0, Math.min(255, Math.round((v + 100) * 2.55))));
+            socket.emit('spectrum-data', { bins });
+          }, 100); // 10 раз/сек — компромисс между плавностью и нагрузкой на сокет
+        },
+        onerror: (err) => {
+          trackStatusEl.textContent = 'Ошибка загрузки трека: ' + err;
+        }
+      }).connect(hostChain.input);
+    });
+
+    socket.on('effect-change', ({ role, value }) => {
+      if (!hostChain) return;
+      switch (role) {
+        case 'filter':
+          hostChain.filter.frequency.rampTo(value, 0.05);
+          break;
+        case 'reverb':
+          // value приходит в диапазоне 0..1 (roomSize), см. player.html
+          hostChain.reverb.roomSize.rampTo(value, 0.05);
+          break;
+        case 'delay':
+          hostChain.delay.feedback.rampTo(value, 0.05);
+          break;
+        case 'pitch':
+          // Tone.PitchShift.pitch — полутоны (-12..+12), НЕ playbackRate
+          hostChain.pitch.pitch = value;
+          break;
+        case 'distortion':
+          hostChain.distortion.distortion = value;
+          break;
+      }
+    });
+
+    // Play/Pause/Stop — через Tone.Transport, чтобы Pause реально сохранял позицию
+    playBtn.addEventListener('click', async () => {
+      await Tone.start();
+      if (hostPlayer) {
+        Tone.Transport.start();
+        trackStatusEl.textContent = 'Играет';
+      }
+    });
+    pauseBtn.addEventListener('click', () => {
+      if (hostPlayer) {
+        Tone.Transport.pause();
+        trackStatusEl.textContent = 'Пауза';
+      }
+    });
+    stopBtn.addEventListener('click', () => {
+      if (hostPlayer) {
+        Tone.Transport.stop();
+        trackStatusEl.textContent = 'Остановлено';
+      }
     });
 
     // ═══════════════════════════════════════════════════
@@ -327,22 +411,17 @@
     const countdownOverlay = document.getElementById('countdown-overlay');
     const countdownOverlayValue = document.getElementById('countdown-overlay-value');
 
-    function sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    }
+    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
     async function runCountdown() {
       countdownBtn.disabled = true;
       const sequence = ['5', '4', '3', '2', '1', '🎵'];
-
       countdownOverlay.style.display = 'flex';
-
       for (const value of sequence) {
         console.log(value);
         countdownOverlayValue.textContent = value;
         await sleep(1000);
       }
-
       countdownOverlay.style.display = 'none';
       countdownBtn.disabled = false;
     }

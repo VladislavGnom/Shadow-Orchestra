@@ -6,147 +6,65 @@
 <title>Теневой оркестр — Инструмент</title>
 <style>
   * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-    -webkit-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
+    margin: 0; padding: 0; box-sizing: border-box;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
-
   html, body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: #000;
-    touch-action: none;
-    font-family: 'Courier New', monospace;
-    color: #fff;
+    width: 100%; height: 100%; overflow: hidden; background: #000;
+    touch-action: none; font-family: 'Courier New', monospace; color: #fff;
   }
 
-  /* ═══════════════════════════════════════════════
-     Оверлей активации — блокирует всё до успешного
-     прохождения обоих шагов (датчики + аудио)
-     ═══════════════════════════════════════════════ */
   #activate-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: #000;
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-    padding: 20px;
-    text-align: center;
-    overflow: hidden;
-    touch-action: none;
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000;
+    z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px; padding: 20px; text-align: center; overflow: hidden; touch-action: none;
   }
-
-  #activate-emoji {
-    font-size: 64px;
-  }
-
-  #activate-title {
-    font-size: 18px;
-    letter-spacing: 4px;
-    text-transform: uppercase;
-  }
-
+  #activate-emoji { font-size: 64px; }
+  #activate-title { font-size: 18px; letter-spacing: 4px; text-transform: uppercase; }
   #activate-btn {
-    background: transparent;
-    border: 2px solid #4ecdc4;
-    color: #4ecdc4;
-    font-family: 'Courier New', monospace;
-    font-size: 18px;
-    letter-spacing: 3px;
-    padding: 16px 40px;
-    border-radius: 8px;
-    cursor: pointer;
+    background: transparent; border: 2px solid #4ecdc4; color: #4ecdc4;
+    font-family: 'Courier New', monospace; font-size: 18px; letter-spacing: 3px;
+    padding: 16px 40px; border-radius: 8px; cursor: pointer;
   }
+  #activate-btn:active { background: rgba(78, 205, 196, 0.15); }
+  #activate-btn:disabled { opacity: 0.5; cursor: default; }
 
-  #activate-btn:active {
-    background: rgba(78, 205, 196, 0.15);
-  }
-
-  #activate-btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  /* ═══════════════════════════════════════════════
-     Основной экран инструмента (скрыт до активации)
-     ═══════════════════════════════════════════════ */
   #instrument-screen {
-    display: none;
-    width: 100%;
-    height: 100%;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    transition: background-color 0.15s ease-out;
-    background: hsl(0, 70%, 5%);
+    display: none; width: 100%; height: 100%; flex-direction: column;
+    align-items: center; justify-content: center; position: relative;
+    transition: background-color 0.15s ease-out; background: hsl(0, 70%, 5%);
   }
-
+  #playmode-badge {
+    position: absolute; top: 4%; font-size: 10px; opacity: 0.5; letter-spacing: 2px; text-transform: uppercase;
+  }
   #role-label {
-    position: absolute;
-    top: 8%;
-    font-size: 14px;
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    opacity: 0.7;
+    position: absolute; top: 10%; font-size: 14px; letter-spacing: 3px;
+    text-transform: uppercase; opacity: 0.7;
   }
-
-  #note-display {
-    font-size: 72px;
-    font-weight: bold;
-    letter-spacing: 2px;
-  }
-
+  #note-display { font-size: 64px; font-weight: bold; letter-spacing: 2px; text-align: center; }
   #volume-bar-container {
-    position: absolute;
-    bottom: 6%;
-    width: 70%;
-    height: 10px;
-    border: 1px solid rgba(255,255,255,0.3);
-    border-radius: 5px;
-    overflow: hidden;
+    position: absolute; bottom: 6%; width: 70%; height: 10px;
+    border: 1px solid rgba(255,255,255,0.3); border-radius: 5px; overflow: hidden;
   }
-
-  #volume-bar-fill {
-    height: 100%;
-    width: 0%;
-    background: currentColor;
-    transition: width 0.1s ease-out;
-  }
+  #volume-bar-fill { height: 100%; width: 0%; background: currentColor; transition: width 0.1s ease-out; }
 </style>
 </head>
 <body>
 
-  <!-- ═══ Оверлей активации ═══ -->
   <div id="activate-overlay">
     <div id="activate-emoji">🎭</div>
     <div id="activate-title">ТЕНЕВОЙ ОРКЕСТР</div>
     <button id="activate-btn">АКТИВИРОВАТЬ</button>
   </div>
 
-  <!-- ═══ Основной экран инструмента ═══ -->
   <div id="instrument-screen">
+    <div id="playmode-badge">—</div>
     <div id="role-label">—</div>
     <div id="note-display">—</div>
-    <div id="volume-bar-container">
-      <div id="volume-bar-fill"></div>
-    </div>
+    <div id="volume-bar-container"><div id="volume-bar-fill"></div></div>
   </div>
 
-  <!-- CDN: Socket.IO (раздаётся сервером) -->
   <script src="/socket.io/socket.io.js"></script>
-  <!-- CDN: Tone.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 
   <script>
@@ -154,41 +72,30 @@
     // Состояние клиента
     // ═══════════════════════════════════════════════════
     let currentRole = null;
+    let currentPlayMode = 'synth'; // synth | remix — см. пояснение про поле playMode
     let currentNote = 'C3';
     let currentVelocity = 0;
-    let orchestraSettings = { bpm: 120, key: 'C', scale: 'minor', mode: 'ambient' };
+    let orchestraSettings = { bpm: 120, key: 'C', scale: 'minor', mode: 'ambient', playMode: 'synth' };
 
     let synth = null;
     let reverb = null;
+    let scheduledEventId = null; // id из Tone.Transport.scheduleRepeat, для bass/arp
     let socket = null;
 
-    const ROLE_HUE = { bass: 0, pad: 180, lead: 50, arp: 260, fx: 330 };
-    const ROLE_COLOR = {
-      bass: '#ff6b6b',
-      pad: '#4ecdc4',
-      lead: '#ffe66d',
-      arp: '#a29bfe',
-      fx: '#fd79a8'
-    };
+    const SYNTH_ROLE_HUE = { bass: 0, pad: 180, lead: 50, arp: 260, fx: 330 };
+    const SYNTH_ROLE_COLOR = { bass: '#ff6b6b', pad: '#4ecdc4', lead: '#ffe66d', arp: '#a29bfe', fx: '#fd79a8' };
+
+    // Цвета для ролей ремикса — в ТЗ не заданы явно, выбраны по аналогии со стилем проекта
+    const REMIX_ROLE_HUE = { filter: 200, reverb: 280, delay: 320, pitch: 40, distortion: 0 };
+    const REMIX_ROLE_COLOR = { filter: '#4ecdc4', reverb: '#a29bfe', delay: '#fd79a8', pitch: '#ffe66d', distortion: '#ff6b6b' };
+    const REMIX_LABEL_RU = { filter: 'Фильтр', reverb: 'Реверб', delay: 'Дилей', pitch: 'Питч', distortion: 'Дисторшн' };
 
     const THROTTLE_MS = 50;
     let lastMotionSent = 0;
 
     // ═══════════════════════════════════════════════════
-    // Экран активации
-    //
-    // КРИТИЧНО для iOS: requestPermission() должен быть ПЕРВЫМ
-    // вызовом в обработчике клика — пока браузер ещё считает,
-    // что мы внутри пользовательского жеста. Если перед ним
-    // поставить await Tone.start() (или любой другой await),
-    // iOS теряет связь с жестом и requestPermission() падает
-    // с "requires a user gesture to prompt".
-    //
-    // Поэтому строгий порядок:
-    //   1) DeviceOrientationEvent.requestPermission()
-    //   2) Tone.start()
-    //   3) скрыть оверлей
-    //   4) startOrchestra()
+    // Активация: requestPermission ПЕРВЫМ, потом Tone.start()
+    // (см. предыдущее исправление для iOS)
     // ═══════════════════════════════════════════════════
     const activateBtn = document.getElementById('activate-btn');
     const activateOverlay = document.getElementById('activate-overlay');
@@ -198,49 +105,37 @@
       activateBtn.disabled = true;
 
       try {
-        // 1) СНАЧАЛА — разрешение на датчики, пока связь с жестом жива
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
           console.log('iOS: запрашиваю датчики');
-
           const permission = await DeviceOrientationEvent.requestPermission();
           console.log('Результат: ' + permission);
 
           if (permission !== 'granted') {
             alert('Доступ к датчикам движения отклонён. Разрешите его в Настройки → Safari → Движение и ориентация, затем обновите страницу.');
             activateBtn.disabled = false;
-            return; // оверлей НЕ скрываем
+            return;
           }
-
           console.log('Датчики разрешены');
         }
-        // Android / десктоп — requestPermission отсутствует, шаг пропускается
 
-        // 2) ПОТОМ — разблокировка Web Audio API
         console.log('Запускаю Tone.start()');
         await Tone.start();
         console.log('Tone.start() выполнен');
 
-        // 3) Скрываем оверлей — только после успешных шагов 1 и 2
         console.log('Скрываю оверлей');
         activateOverlay.style.display = 'none';
         document.getElementById('instrument-screen').style.display = 'flex';
 
-        // 4) Запускаем основную логику
         console.log('Вызываю startOrchestra');
         startOrchestra();
       } catch (err) {
         console.error('Ошибка активации:', err);
         alert('Ошибка активации: ' + err.message);
         activateBtn.disabled = false;
-        // оверлей НЕ скрываем
       }
     });
 
-    // ═══════════════════════════════════════════════════
-    // Основная логика — запускается только после активации.
-    // Первый вызов — регистрация на сервере как player.
-    // ═══════════════════════════════════════════════════
     function startOrchestra() {
       socket = io();
       socket.emit('register', { type: 'player' });
@@ -253,21 +148,11 @@
 
     // ── Socket.IO ────────────────────────────────────────
     function attachSocketListeners() {
-      // init: приходит один раз после register — роль + текущие настройки
+      // init: приходит при регистрации И при каждой смене playMode дирижёром
       socket.on('init', ({ role, settings }) => {
-        currentRole = role;
-        orchestraSettings = settings;
-
-        document.getElementById('role-label').textContent = role;
-        document.getElementById('role-label').style.color = ROLE_COLOR[role] || '#fff';
-        document.getElementById('note-display').style.color = ROLE_COLOR[role] || '#fff';
-        document.getElementById('volume-bar-fill').style.color = ROLE_COLOR[role] || '#fff';
-
-        Tone.Transport.bpm.value = settings.bpm;
-        setupSoundForRole(role);
+        applyInit(role, settings);
       });
 
-      // orchestra-settings: broadcast при изменении настроек дирижёром
       socket.on('orchestra-settings', (settings) => {
         orchestraSettings = settings;
         if (typeof Tone !== 'undefined' && Tone.Transport) {
@@ -275,15 +160,54 @@
         }
       });
 
+      // sound-update используется только в playMode = synth
       socket.on('sound-update', ({ note, velocity }) => {
+        if (currentPlayMode !== 'synth') return;
         currentNote = note;
         currentVelocity = velocity;
-        updateVisuals(note, velocity);
+        updateSynthVisuals(note, velocity);
         handleReactiveSound(note, velocity);
       });
     }
 
-    // ── Датчики (DeviceOrientation) ─────────────────────
+    // ═══════════════════════════════════════════════════
+    // Применение init: переключает интерфейс между synth и remix,
+    // чистит ресурсы предыдущего режима
+    // ═══════════════════════════════════════════════════
+    function applyInit(role, settings) {
+      cleanupSynth(); // на случай перехода remix → synth или смены роли внутри synth
+
+      currentRole = role;
+      currentPlayMode = settings.playMode || 'synth';
+      orchestraSettings = settings;
+      Tone.Transport.bpm.value = settings.bpm;
+
+      document.getElementById('playmode-badge').textContent =
+        currentPlayMode === 'remix' ? 'РЕМИКС — ПУЛЬТ ЭФФЕКТОВ' : 'СИНТЕЗАТОР';
+
+      if (currentPlayMode === 'remix') {
+        const label = REMIX_LABEL_RU[role] || role;
+        const color = REMIX_ROLE_COLOR[role] || '#fff';
+        setRoleLabelUI(label, color);
+        document.getElementById('note-display').textContent = '—';
+        document.getElementById('volume-bar-fill').style.width = '0%';
+        // В remix-режиме звук на телефоне НЕ синтезируется — трек играет на хосте,
+        // телефон только шлёт effect-change. Поэтому setupSoundForRole не вызывается.
+      } else {
+        const color = SYNTH_ROLE_COLOR[role] || '#fff';
+        setRoleLabelUI(role, color);
+        setupSoundForRole(role);
+      }
+    }
+
+    function setRoleLabelUI(label, color) {
+      document.getElementById('role-label').textContent = label;
+      document.getElementById('role-label').style.color = color;
+      document.getElementById('note-display').style.color = color;
+      document.getElementById('volume-bar-fill').style.color = color;
+    }
+
+    // ── Датчики: ветвление по currentPlayMode ───────────
     function startOrientationListener() {
       window.addEventListener('deviceorientation', (event) => {
         const now = Date.now();
@@ -293,30 +217,114 @@
         const gamma = event.gamma ?? 0;
         const beta = event.beta ?? 0;
 
-        if (socket) {
-          socket.emit('motion', {
-            gamma: gamma,
-            beta: beta,
-            acceleration: 0 // акселерометр пока не используем
-          });
+        if (currentPlayMode === 'remix') {
+          handleRemixMotion(gamma, beta);
+        } else if (socket) {
+          socket.emit('motion', { gamma, beta, acceleration: 0 });
         }
       });
     }
 
     // ═══════════════════════════════════════════════════
-    // Синтез звука под роль
+    // REMIX: маппинг gamma/beta → значение эффекта, локально на клиенте
+    // ═══════════════════════════════════════════════════
+    function handleRemixMotion(gamma, beta) {
+      if (!currentRole) return;
+      let value;
+
+      switch (currentRole) {
+        case 'filter': {
+          // gamma (-90..90) → частота среза (200..8000 Hz)
+          const clamped = Math.max(-90, Math.min(90, gamma));
+          value = 200 + ((clamped + 90) / 180) * (8000 - 200);
+          break;
+        }
+        case 'reverb': {
+          // beta (-90..90) → roomSize (0..1). Изначально в ТЗ decay(0.1-5 сек),
+          // но узел на хосте — Tone.Freeverb (roomSize), см. пояснение в conductor.html
+          const clamped = Math.max(-90, Math.min(90, beta));
+          value = (clamped + 90) / 180;
+          break;
+        }
+        case 'delay': {
+          // abs(gamma)/90 → feedback (0..0.8)
+          value = Math.min(0.8, (Math.abs(gamma) / 90) * 0.8);
+          break;
+        }
+        case 'pitch': {
+          // gamma (-90..90) → полутоны (-12..+12), т.к. узел — Tone.PitchShift
+          const clamped = Math.max(-90, Math.min(90, gamma));
+          value = (clamped / 90) * 12;
+          break;
+        }
+        case 'distortion': {
+          // abs(beta)/180 → amount (0..1)
+          value = Math.min(1, Math.abs(beta) / 180);
+          break;
+        }
+        default:
+          return;
+      }
+
+      updateRemixVisuals(currentRole, value);
+
+      if (socket) {
+        socket.emit('effect-change', { role: currentRole, value });
+      }
+    }
+
+    function updateRemixVisuals(role, value) {
+      const hue = REMIX_ROLE_HUE[role] ?? 0;
+      let displayText = '';
+      let normalized = 0; // 0..1 для полоски громкости
+
+      switch (role) {
+        case 'filter':
+          displayText = Math.round(value) + ' Hz';
+          normalized = (value - 200) / (8000 - 200);
+          break;
+        case 'reverb':
+          displayText = value.toFixed(2) + ' room';
+          normalized = value;
+          break;
+        case 'delay':
+          displayText = Math.round(value * 100) + '% fb';
+          normalized = value / 0.8;
+          break;
+        case 'pitch':
+          displayText = (value >= 0 ? '+' : '') + value.toFixed(1) + ' st';
+          normalized = (value + 12) / 24;
+          break;
+        case 'distortion':
+          displayText = Math.round(value * 100) + '%';
+          normalized = value;
+          break;
+      }
+
+      normalized = Math.max(0, Math.min(1, normalized));
+      const lightness = 5 + normalized * 15;
+
+      const screen = document.getElementById('instrument-screen');
+      screen.style.backgroundColor = `hsl(${hue}, 70%, ${lightness}%)`;
+
+      const noteDisplay = document.getElementById('note-display');
+      noteDisplay.textContent = displayText;
+      noteDisplay.style.textShadow = `0 0 ${10 + normalized * 30}px currentColor`;
+
+      document.getElementById('volume-bar-fill').style.width = `${normalized * 100}%`;
+    }
+
+    // ═══════════════════════════════════════════════════
+    // SYNTH: синтез звука под роль (как раньше)
     // ═══════════════════════════════════════════════════
     async function setupSoundForRole(role) {
-      reverb = new Tone.Reverb({
-        decay: role === 'fx' ? 5 : 3,
-        wet: 0.5
-      }).toDestination();
+      reverb = new Tone.Reverb({ decay: role === 'fx' ? 5 : 3, wet: 0.5 }).toDestination();
       await reverb.generate();
 
       switch (role) {
         case 'bass':
           synth = new Tone.MembraneSynth().connect(reverb);
-          Tone.Transport.scheduleRepeat((time) => {
+          scheduledEventId = Tone.Transport.scheduleRepeat((time) => {
             if (currentVelocity > 0.05) {
               const freq = Tone.Frequency(currentNote).transpose(-12);
               synth.triggerAttackRelease(freq, '4n', time, currentVelocity);
@@ -325,25 +333,16 @@
           break;
 
         case 'pad':
-          synth = new Tone.Synth({
-            oscillator: { type: 'sine' },
-            envelope: { attack: 0.5, release: 2 }
-          }).connect(reverb);
+          synth = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.5, release: 2 } }).connect(reverb);
           break;
 
         case 'lead':
-          synth = new Tone.Synth({
-            oscillator: { type: 'sawtooth' },
-            envelope: { attack: 0.02, release: 1 }
-          }).connect(reverb);
+          synth = new Tone.Synth({ oscillator: { type: 'sawtooth' }, envelope: { attack: 0.02, release: 1 } }).connect(reverb);
           break;
 
         case 'arp':
-          synth = new Tone.Synth({
-            oscillator: { type: 'square' },
-            envelope: { attack: 0.01, release: 0.3 }
-          }).connect(reverb);
-          Tone.Transport.scheduleRepeat((time) => {
+          synth = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.01, release: 0.3 } }).connect(reverb);
+          scheduledEventId = Tone.Transport.scheduleRepeat((time) => {
             if (currentVelocity > 0.05) {
               synth.triggerAttackRelease(currentNote, '8n', time, currentVelocity);
             }
@@ -351,32 +350,23 @@
           break;
 
         case 'fx':
-          synth = new Tone.Synth({
-            oscillator: { type: 'triangle' },
-            envelope: { attack: 0.8, release: 3 }
-          }).connect(reverb);
+          synth = new Tone.Synth({ oscillator: { type: 'triangle' }, envelope: { attack: 0.8, release: 3 } }).connect(reverb);
           break;
       }
     }
 
-    // Реактивные роли (pad/lead/fx) играют напрямую по sound-update.
-    // Длительность ноты для lead в ТЗ явно не задана — взял '4n' как
-    // разумное среднее между pad ('2n') и arp/fx.
     const REACTIVE_DURATION = { pad: '2n', lead: '4n', fx: '1n' };
 
     function handleReactiveSound(note, velocity) {
       if (!synth || !currentRole) return;
-      if (!(currentRole in REACTIVE_DURATION)) return; // bass/arp играют через scheduleRepeat
+      if (!(currentRole in REACTIVE_DURATION)) return;
       if (velocity > 0.1) {
         synth.triggerAttackRelease(note, REACTIVE_DURATION[currentRole], undefined, velocity);
       }
     }
 
-    // ═══════════════════════════════════════════════════
-    // Визуальная обратная связь
-    // ═══════════════════════════════════════════════════
-    function updateVisuals(note, velocity) {
-      const hue = ROLE_HUE[currentRole] ?? 0;
+    function updateSynthVisuals(note, velocity) {
+      const hue = SYNTH_ROLE_HUE[currentRole] ?? 0;
       const lightness = 5 + velocity * 15;
 
       const screen = document.getElementById('instrument-screen');
@@ -387,6 +377,16 @@
       noteDisplay.style.textShadow = `0 0 ${10 + velocity * 30}px currentColor`;
 
       document.getElementById('volume-bar-fill').style.width = `${velocity * 100}%`;
+    }
+
+    // ── Очистка ресурсов синтезатора (при смене роли/playMode) ──
+    function cleanupSynth() {
+      if (scheduledEventId !== null) {
+        Tone.Transport.clear(scheduledEventId);
+        scheduledEventId = null;
+      }
+      if (synth) { synth.dispose(); synth = null; }
+      if (reverb) { reverb.dispose(); reverb = null; }
     }
   </script>
 </body>
