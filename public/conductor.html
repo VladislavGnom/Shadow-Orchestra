@@ -2,50 +2,119 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Теневой оркестр — Пульт дирижёра</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Courier New', monospace; }
+  * {
+    margin: 0; padding: 0; box-sizing: border-box;
+    font-family: 'Courier New', monospace;
+    -webkit-tap-highlight-color: transparent;
+  }
 
-  html, body { width: 100%; height: 100%; background: #111; color: #fff; overflow-y: auto; }
+  html, body {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    background: #111;
+    color: #fff;
+  }
 
-  #panel { width: 420px; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+  #panel {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(14px, 2vh, 20px);
+    padding:
+      calc(20px + env(safe-area-inset-top))
+      calc(20px + env(safe-area-inset-right))
+      calc(20px + env(safe-area-inset-bottom))
+      calc(20px + env(safe-area-inset-left));
+  }
 
-  h1 { font-size: 18px; letter-spacing: 3px; text-align: center; opacity: 0.9; }
+  h1 {
+    font-size: clamp(16px, 3.5vw, 20px);
+    letter-spacing: 3px;
+    text-align: center;
+    opacity: 0.9;
+  }
 
-  #counter-block { background: #1a1a1a; border-radius: 10px; padding: 20px; text-align: center; }
-  #counter-value { font-size: 48px; font-weight: bold; color: #555; transition: color 0.3s ease; }
-  #counter-label { font-size: 12px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px; }
+  #counter-block {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: clamp(14px, 3vh, 22px);
+    text-align: center;
+  }
+  #counter-value {
+    font-size: clamp(36px, 9vw, 52px);
+    font-weight: bold;
+    color: #555;
+    transition: color 0.3s ease;
+  }
+  #counter-label {
+    font-size: clamp(10px, 2.2vw, 12px);
+    opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px;
+  }
 
-  .block { background: #1a1a1a; border-radius: 10px; padding: 16px; border-left: 3px solid #555; }
-  .block-label { font-size: 12px; opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
+  .block {
+    background: #1a1a1a;
+    border-radius: 10px;
+    padding: clamp(14px, 2.5vh, 18px);
+    border-left: 3px solid #555;
+  }
+  .block-label {
+    font-size: clamp(11px, 2.4vw, 13px);
+    opacity: 0.7; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px;
+  }
 
   #tempo-block { border-left-color: #4ecdc4; }
   #key-block   { border-left-color: #a29bfe; }
   #mode-block  { border-left-color: #ffe66d; }
   #playmode-block { border-left-color: #fd79a8; }
-  #remix-block { border-left-color: #fd79a8; display: none; flex-direction: column; gap: 10px; }
+  #remix-block { border-left-color: #fd79a8; display: none; flex-direction: column; gap: 12px; }
   #show-block  { border-left-color: #555; }
 
   .tempo-row { display: flex; align-items: center; gap: 12px; }
-  input[type="range"] { flex: 1; accent-color: #4ecdc4; cursor: pointer; }
-  #bpm-value { min-width: 80px; text-align: right; font-size: 14px; white-space: nowrap; }
-
-  .key-row { display: flex; gap: 10px; }
-  select, input[type="file"] {
-    flex: 1; background: #111; color: #fff; border: 1px solid #333; border-radius: 6px;
-    padding: 8px; font-family: 'Courier New', monospace; cursor: pointer; font-size: 12px;
+  input[type="range"] {
+    flex: 1;
+    accent-color: #4ecdc4;
+    cursor: pointer;
+    height: 20px; /* высота "тач-зоны" ползунка, не только видимой полоски */
+    touch-action: manipulation;
+  }
+  #bpm-value {
+    min-width: 80px; text-align: right;
+    font-size: clamp(13px, 2.6vw, 15px);
+    white-space: nowrap;
   }
 
-  .mode-row { display: flex; gap: 8px; }
+  .key-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  select, input[type="file"] {
+    flex: 1;
+    min-width: 120px;
+    background: #111; color: #fff; border: 1px solid #333; border-radius: 6px;
+    padding: clamp(10px, 1.8vh, 12px) 10px;
+    font-family: 'Courier New', monospace; cursor: pointer;
+    font-size: clamp(13px, 2.8vw, 15px);
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .mode-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .mode-btn, .playmode-btn {
-    flex: 1; padding: 12px 6px; border-radius: 8px; border: 2px solid transparent;
-    background: rgba(255,255,255,0.05); color: #fff; font-family: 'Courier New', monospace;
-    font-size: 12px; cursor: pointer; opacity: 0.55; transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    flex: 1;
+    min-width: 90px;
+    min-height: 44px;
+    padding: clamp(10px, 1.6vh, 12px) 6px;
+    border-radius: 8px; border: 2px solid transparent;
+    background: rgba(255, 255, 255, 0.05); color: #fff;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(11px, 2.6vw, 13px);
+    cursor: pointer; opacity: 0.55;
+    transition: opacity 0.2s ease, border-color 0.2s ease, background 0.2s ease;
     text-align: center;
+    touch-action: manipulation;
   }
   .mode-btn:hover, .playmode-btn:hover { opacity: 0.85; }
-  .mode-btn.active, .playmode-btn.active { opacity: 1; border-color: currentColor; background: rgba(255,255,255,0.1); }
+  .mode-btn.active, .playmode-btn.active { opacity: 1; border-color: currentColor; background: rgba(255, 255, 255, 0.1); }
 
   #mode-ambient { color: #a29bfe; }
   #mode-beat    { color: #4ecdc4; }
@@ -54,35 +123,77 @@
   #playmode-remix { color: #fd79a8; }
 
   #load-track-btn {
-    width: 100%; padding: 10px; background: #333; color: #fff; border: none; border-radius: 6px;
-    font-family: 'Courier New', monospace; font-size: 13px; letter-spacing: 1px; cursor: pointer;
+    width: 100%;
+    min-height: 44px;
+    padding: clamp(10px, 1.8vh, 13px);
+    background: #333; color: #fff; border: none; border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(13px, 2.8vw, 15px);
+    letter-spacing: 1px; cursor: pointer;
+    touch-action: manipulation;
   }
   #load-track-btn:hover { background: #444; }
   #load-track-btn:disabled { opacity: 0.5; cursor: default; }
 
-  #track-status { font-size: 12px; opacity: 0.75; min-height: 16px; }
+  #track-status { font-size: clamp(11px, 2.4vw, 13px); opacity: 0.75; min-height: 16px; }
 
   .transport-row { display: flex; gap: 8px; }
   .transport-row button {
-    flex: 1; padding: 10px; background: rgba(255,255,255,0.05); color: #fff;
-    border: 1px solid #333; border-radius: 6px; font-family: 'Courier New', monospace;
-    font-size: 13px; cursor: pointer;
+    flex: 1;
+    min-height: 44px;
+    padding: clamp(10px, 1.6vh, 12px);
+    background: rgba(255, 255, 255, 0.05); color: #fff;
+    border: 1px solid #333; border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(12px, 2.6vw, 14px);
+    cursor: pointer;
+    touch-action: manipulation;
   }
-  .transport-row button:hover { background: rgba(255,255,255,0.12); }
+  .transport-row button:hover { background: rgba(255, 255, 255, 0.12); }
 
   #countdown-btn {
-    width: 100%; padding: 16px; background: #333; color: #fff; border: none; border-radius: 8px;
-    font-family: 'Courier New', monospace; font-size: 14px; letter-spacing: 2px; cursor: pointer;
+    width: 100%;
+    min-height: 44px;
+    padding: clamp(14px, 2.4vh, 18px);
+    background: #333; color: #fff; border: none; border-radius: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(13px, 2.8vw, 15px);
+    letter-spacing: 2px; cursor: pointer;
     transition: background 0.2s ease;
+    touch-action: manipulation;
   }
   #countdown-btn:hover:not(:disabled) { background: #444; }
   #countdown-btn:disabled { opacity: 0.5; cursor: default; }
 
   #countdown-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: none;
+    position: fixed; inset: 0; display: none;
     align-items: center; justify-content: center; pointer-events: none; z-index: 999;
   }
-  #countdown-overlay-value { font-size: 200px; font-weight: bold; color: #fff; text-shadow: 0 0 60px rgba(255,255,255,0.6); }
+  #countdown-overlay-value {
+    font-size: clamp(80px, 25vw, 200px);
+    font-weight: bold; color: #fff;
+    text-shadow: 0 0 60px rgba(255, 255, 255, 0.6);
+  }
+
+  /* ── Телефон/планшет: карточки на всю ширину, вертикальный скролл ── */
+  @media (max-width: 768px) {
+    html, body { overflow-y: auto; overflow-x: hidden; }
+    #panel { width: 100%; max-width: 100%; }
+    .mode-row { flex-direction: column; }
+    .mode-btn, .playmode-btn { width: 100%; }
+  }
+
+  /* ── Десктоп: узкая закреплённая колонка слева, без скролла страницы ── */
+  @media (min-width: 769px) {
+    html, body { overflow: hidden; }
+    #panel {
+      position: fixed;
+      top: 0; left: 0;
+      width: clamp(300px, 26vw, 350px);
+      height: 100dvh;
+      overflow-y: auto; /* подстраховка, если контент всё же не влезает по высоте */
+    }
+  }
 </style>
 </head>
 <body>

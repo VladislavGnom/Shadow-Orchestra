@@ -2,51 +2,144 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Теневой оркестр — Инструмент</title>
 <style>
   * {
     margin: 0; padding: 0; box-sizing: border-box;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
   }
+
   html, body {
-    width: 100%; height: 100%; overflow: hidden; background: #000;
-    touch-action: none; font-family: 'Courier New', monospace; color: #fff;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh; /* динамический viewport height — учитывает адресную строку Safari */
+    overflow: hidden;
+    background: #000;
+    touch-action: none;
+    font-family: 'Courier New', monospace;
+    color: #fff;
   }
 
   #activate-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000;
-    z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 20px; padding: 20px; text-align: center; overflow: hidden; touch-action: none;
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(14px, 4vh, 28px);
+    padding:
+      calc(20px + env(safe-area-inset-top))
+      calc(20px + env(safe-area-inset-right))
+      calc(20px + env(safe-area-inset-bottom))
+      calc(20px + env(safe-area-inset-left));
+    text-align: center;
+    overflow: hidden;
+    touch-action: none;
   }
-  #activate-emoji { font-size: 64px; }
-  #activate-title { font-size: 18px; letter-spacing: 4px; text-transform: uppercase; }
+
+  #activate-emoji { font-size: clamp(48px, 12vw, 72px); }
+
+  #activate-title {
+    font-size: clamp(14px, 4.5vw, 20px);
+    letter-spacing: clamp(2px, 0.8vw, 4px);
+    text-transform: uppercase;
+  }
+
   #activate-btn {
-    background: transparent; border: 2px solid #4ecdc4; color: #4ecdc4;
-    font-family: 'Courier New', monospace; font-size: 18px; letter-spacing: 3px;
-    padding: 16px 40px; border-radius: 8px; cursor: pointer;
+    background: transparent;
+    border: 2px solid #4ecdc4;
+    color: #4ecdc4;
+    font-family: 'Courier New', monospace;
+    font-size: clamp(15px, 4vw, 19px);
+    letter-spacing: clamp(2px, 0.6vw, 3px);
+    padding: clamp(15px, 3vw, 25px) clamp(30px, 8vw, 60px);
+    min-height: 44px; /* минимальный тап-таргет Apple HIG */
+    min-width: 44px;
+    border-radius: 8px;
+    cursor: pointer;
+    touch-action: manipulation;
   }
   #activate-btn:active { background: rgba(78, 205, 196, 0.15); }
   #activate-btn:disabled { opacity: 0.5; cursor: default; }
 
   #instrument-screen {
-    display: none; width: 100%; height: 100%; flex-direction: column;
-    align-items: center; justify-content: center; position: relative;
-    transition: background-color 0.15s ease-out; background: hsl(0, 70%, 5%);
+    display: none; /* включается JS-ом после активации, как и раньше */
+    width: 100%;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: clamp(10px, 3vh, 30px);
+    padding:
+      calc(16px + env(safe-area-inset-top))
+      calc(16px + env(safe-area-inset-right))
+      calc(16px + env(safe-area-inset-bottom))
+      calc(16px + env(safe-area-inset-left));
+    transition: background 0.3s;
+    background: hsl(0, 70%, 5%);
   }
+
   #playmode-badge {
-    position: absolute; top: 4%; font-size: 10px; opacity: 0.5; letter-spacing: 2px; text-transform: uppercase;
+    font-size: clamp(9px, 2.4vw, 12px);
+    opacity: 0.5;
+    letter-spacing: 2px;
+    text-transform: uppercase;
   }
+
   #role-label {
-    position: absolute; top: 10%; font-size: 14px; letter-spacing: 3px;
-    text-transform: uppercase; opacity: 0.7;
+    font-size: clamp(12px, 4vw, 18px);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.7;
   }
-  #note-display { font-size: 64px; font-weight: bold; letter-spacing: 2px; text-align: center; }
+
+  #note-display {
+    font-size: clamp(48px, 15vw, 96px);
+    font-weight: bold;
+    letter-spacing: 2px;
+    text-align: center;
+    line-height: 1;
+  }
+
   #volume-bar-container {
-    position: absolute; bottom: 6%; width: 70%; height: 10px;
-    border: 1px solid rgba(255,255,255,0.3); border-radius: 5px; overflow: hidden;
+    width: min(80vw, 350px);
+    height: clamp(4px, 1vh, 8px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 999px;
+    overflow: hidden;
   }
-  #volume-bar-fill { height: 100%; width: 0%; background: currentColor; transition: width 0.1s ease-out; }
+
+  #volume-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: currentColor;
+    transition: width 0.1s ease-out;
+    border-radius: 999px;
+  }
+
+  /* ── Телефон ── */
+  @media (max-width: 768px) {
+    html, body { overflow: hidden; }
+  }
+
+  /* ── Десктоп/планшет ── */
+  @media (min-width: 769px) {
+    html, body { overflow: auto; }
+  }
+
+  /* ── Ландшафт на низких экранах — vw-шрифты иначе вылезают за высоту ── */
+  @media (orientation: landscape) and (max-height: 500px) {
+    #instrument-screen { gap: clamp(6px, 2vh, 14px); }
+    #note-display { font-size: clamp(36px, 12vh, 72px); }
+    #role-label { font-size: clamp(10px, 3vh, 14px); }
+    #volume-bar-container { width: min(60vw, 300px); }
+    #activate-emoji { font-size: clamp(36px, 10vh, 56px); }
+  }
 </style>
 </head>
 <body>
